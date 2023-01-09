@@ -33,7 +33,7 @@
 #include "lardataobj/RecoBase/SpacePoint.h"
 #include "lardataobj/RecoBase/Slice.h"
 #include "lardataobj/RecoBase/OpHit.h"
-// #include "lardataobj/RecoBase/OpFlash.h"
+#include "lardataobj/RecoBase/OpFlash.h"
 #include "larpandora/LArPandoraInterface/LArPandoraHelper.h"
 #include "larsim/MCCheater/ParticleInventoryService.h"
 #include "larsim/Utils/TruthMatchUtils.h"
@@ -296,6 +296,7 @@ private:
   // unsigned trueNus(art::Event& evt) const; //LEGACY
   void updateChargeMetrics(const ChargeMetrics& chargeMetrics);
   void updateFlashMetrics(const FlashMetrics& flashMetrics);
+  void updateARAFlashMetrics(const FlashMetrics& flashMetrics);
   void updateScore(const Score& score);
   inline double scoreTerm(const double m, const double n,
                           const double mean, const double spread) const;
@@ -313,6 +314,9 @@ private:
   void copyOpHitsInFlashFindingWindow(
     std::vector<recob::OpHit>& opHits,
     const art::Handle<std::vector<recob::OpHit>>& ophit_h) const;
+  void copyOpFlashesInFlashFindingWindow(
+    std::vector<recob::OpFlash>& opHits,
+    const art::Handle<std::vector<recob::OpFlash>>& ophits_h) const;
   std::vector<SimpleFlash> makeSimpleFlashes(//SBND overload
     std::vector<recob::OpHit>& opHits,
     std::vector<recob::OpHit>& opHitsRght,
@@ -371,6 +375,7 @@ private:
 
   const art::InputTag fPandoraProducer, fSpacePointProducer,
     fOpHitProducer, fOpHitARAProducer;//, fCaloProducer, fTrackProducer;
+  const art::InputTag fOpFlashTPC0Producer, fOpFlashTPC1Producer, fOpFlashTPC0ARAProducer, fOpFlashTPC1ARAProducer;
   const double fBeamSpillTimeStart, fBeamSpillTimeEnd;
   const double fFlashFindingTimeStart, fFlashFindingTimeEnd;
   const double fFlashStart, fFlashEnd;
@@ -382,6 +387,7 @@ private:
   const bool fCorrectDriftDistance;
   // const bool fUseCalo; TODO: Use calorimetry
   const bool fUseARAPUCAS;
+  const bool fUseXARAPUCAs;
   const bool fStoreMCInfo;
   const ReferenceMetrics fRM;
   const bool fNoAvailableMetrics, fMakeTree;
@@ -425,6 +431,7 @@ private:
   double _charge_x_gl, _charge_x, _charge_y, _charge_z,
     _charge_x_glw, _charge_yw, _charge_zw, _charge_slope, _charge_q;
   unsigned _flash_id, _flash_activity;
+  unsigned _flash_ara_id, _flash_ara_activity;
   double _flash_x, _flash_yb, _flash_zb,
     _flash_x_gl, _flash_y, _flash_z,
     _flash_xw, _flash_yw, _flash_zw,
@@ -432,12 +439,21 @@ private:
     _flash_pe, _flash_unpe, _flash_time,
     _hypo_x, _hypo_x_err, _hypo_x_rr, _hypo_x_ratio,
     _y_skew, _z_skew, _y_kurt, _z_kurt;
+  double _flash_ara_x, _flash_ara_yb, _flash_ara_zb,
+    _flash_ara_x_gl, _flash_ara_y, _flash_ara_z,
+    _flash_ara_xw, _flash_ara_yw, _flash_ara_zw,
+    _flash_ara_rr, _flash_ara_ratio, _flash_ara_slope,
+    _flash_ara_pe, _flash_ara_unpe, _flash_ara_time,
+    _hypo_ara_x, _hypo_ara_x_err, _hypo_ara_x_rr, _hypo_ara_x_ratio,
+    _y_ara_skew, _z_ara_skew, _y_ara_kurt, _z_ara_kurt;
   double _petoq;
   double _score, _scr_y, _scr_z, _scr_rr, _scr_ratio,
     _scr_slope, _scr_petoq;
   unsigned _evt, _run, _sub;
   unsigned _slices = -1; unsigned _is_nu = -1;
   double _mcT0 = -9999.;
+  std::vector<double> _ophits_t, _ophits_ara_t;
+  std::vector<double> _opflash_tpc0_t, _opflash_tpc1_t, _opflash_tpc0_ara_t, _opflash_tpc1_ara_t;
 
   static constexpr unsigned kMinEntriesInProjection = 100;
   const std::array<std::string, 3> kSuffixes{"l", "h", "m"};// low, high, medium
