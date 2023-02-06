@@ -285,12 +285,12 @@ def polynomial_correction(skew, hypo_x, pol_coeffs, skew_high_limit=10.):
     return correction * skew
 
 
-def parameters_correction_fitter(nuslice_tree, var, profile_bins,
+def parameters_correction_fitter(nuslice_tree, var, xvar, yvar, profile_bins,
                                  x_low, x_up, fit_func, beam_spill_time_end,
                                  skew_high_limit=10., skew_low_limit=0.05):
     fit_prof = TProfile(f"fit_prof_{var}", "", profile_bins,
                         x_low, x_up)
-    draw_expression = (f"((flash_{var}b-charge_{var})/{var}_skew):new_hypo_x"
+    draw_expression = ( f"( ({yvar}-{xvar}) /{var}_skew):new_hypo_x"
                        f">>fit_prof_{var}")
     # Another option for the fit: using charge_x instead of the hypoX estimate,
     # it might be justified to use the "truth" to make the fit,
@@ -304,8 +304,10 @@ def parameters_correction_fitter(nuslice_tree, var, profile_bins,
     # not as bad, to give more weight to the edges where there large discrepancy
     filter_tolerable = "true"
     if detector == "sbnd":
-        filter_tolerable = "abs(charge_y) > 60." if var=="y" \
-            else "(charge_z<120. || 380.<charge_z)"
+        if(var=="y" or var=="ara_y"):
+            filter_tolerable = "abs(charge_y) > 60."
+        elif(var=="z" or var=="ara_z"):
+            filter_tolerable = "(charge_z<120. || 380.<charge_z)"
     elif detector == "icarus":
         filter_tolerable = "(charge_y<-65. || 19.<charge_y)" if var=="y" \
             else "(charge_z<-800. || 800.<charge_z)"
@@ -362,6 +364,19 @@ def generator(nuslice_tree, rootfile, pset):
         'ratio': metrics_stuff('ratio', pset),
         'slope': metrics_stuff('slope', pset),
         'petoq': metrics_stuff('petoq', pset)
+    } if UseARA == False else {
+        'dy':    metrics_stuff('dy', pset),
+        'dz':    metrics_stuff('dz', pset),
+        'rr':    metrics_stuff('rr', pset),
+        'ratio': metrics_stuff('ratio', pset),
+        'slope': metrics_stuff('slope', pset),
+        'petoq': metrics_stuff('petoq', pset),
+        'dy_ara':    metrics_stuff('dy_ara', pset),
+        'dz_ara':    metrics_stuff('dz_ara', pset),
+        'rr_ara':    metrics_stuff('rr_ara', pset),
+        'ratio_ara': metrics_stuff('ratio_ara', pset),
+        'slope_ara': metrics_stuff('slope_ara', pset),
+        'petoq_ara': metrics_stuff('petoq_ara', pset)
     }
 
     unfolded_score_scatter = TH2D("unfolded_score_scatter", "Scatter plot of match scores",
@@ -438,7 +453,9 @@ def generator(nuslice_tree, rootfile, pset):
 
     # Fit and create std::vector objects for polynomial correction
     # coefficients
-    y_pol_coeffs = parameters_correction_fitter(nuslice_tree, "y", pset.XBins,
+    y_pol_coeffs = parameters_correction_fitter(nuslice_tree,
+                                                "y", "charge_y", "flash_yb",
+                                                pset.XBins,
                                                 0., pset.DriftDistance,
                                                 pset.fit_func_y,
                                                 beam_spill_time_end,
@@ -446,7 +463,9 @@ def generator(nuslice_tree, rootfile, pset):
     y_pol_coeffs_vec = ROOT.std.vector['double']()
     for yp in y_pol_coeffs: y_pol_coeffs_vec.push_back(yp)
 
-    z_pol_coeffs = parameters_correction_fitter(nuslice_tree, "z", pset.XBins,
+    z_pol_coeffs = parameters_correction_fitter(nuslice_tree,
+                                                "z", "charge_z", "flash_zb",
+                                                pset.XBins,
                                                 0., pset.DriftDistance,
                                                 pset.fit_func_z,
                                                 beam_spill_time_end,
@@ -554,6 +573,129 @@ def generator(nuslice_tree, rootfile, pset):
     unfolded_score_scatter.Write()
     unfolded_score_scatter_3D.Write()
     match_score_h1.Write()
+
+    # Do the same for XARAPUCAs
+    if(UseARA):
+
+        # fill rr_h2 and ratio_h2 first
+        for e in nuslice_tree:
+            if not quality_checks(e, beam_spill_time_end): continue
+            if e.flash_ara_time == -9999. or np.isinf(e.petoq_ara): continue
+            qX_ara = e.charge_x
+            md['rr_ara'].h2.Fill(qX_ara, e.flash_ara_rr)
+            md['rr_ara'].prof.Fill(qX_ara, e.flash_ara_rr)
+            md['rr_ara'].prof3.Fill(e.charge_x, e.charge_y, e.charge_z, e.flash_ara_rr)
+            md['ratio_ara'].h2.Fill(qX_ara, e.flash_ara_ratio)
+            md['ratio_ara'].prof.Fill(qX_ara, e.flash_ara_ratio)
+            md['ratio_ara'].prof3.Fill(e.charge_x, e.charge_y, e.charge_z, e.flash_ara_ratio)
+
+        # Use rr_h2 and ratio_h2 to compute flash drift distance
+        # estimates, and store them as 'new_'...
+        new_hypo_ara_x = array('d',[0])
+        new_hypo_ara_x_branch = nuslice_tree.Branch("new_hypo_ara_x", new_hypo_ara_x, "new_hypo_ara_x/D");
+        new_hypo_ara_x_err = array('d',[0])
+        new_hypo_ara_x_err_branch = nuslice_tree.Branch("new_hypo_ara_x_err", new_hypo_ara_x_err, "new_hypo_ara_x_err/D");
+        new_hypo_ara_x_rr = array('d',[0])
+        new_hypo_ara_x_rr_branch = nuslice_tree.Branch("new_hypo_ara_x_rr", new_hypo_ara_x_rr, "new_hypo_ara_x_rr/D");
+        new_hypo_ara_x_rr_err = array('d',[0])
+        new_hypo_ara_x_rr_err_branch = nuslice_tree.Branch("new_hypo_ara_x_rr_err", new_hypo_ara_x_rr_err, "new_hypo_ara_x_rr_err/D");
+        new_hypo_ara_x_ratio = array('d',[0])
+        new_hypo_ara_x_ratio_branch = nuslice_tree.Branch("new_hypo_ara_x_ratio", new_hypo_ara_x_ratio, "new_hypo_ara_x_ratio/D");
+        new_hypo_ara_x_ratio_err = array('d',[0])
+        new_hypo_ara_x_ratio_err_branch = nuslice_tree.Branch("new_ara_hypo_x_ratio_err", new_hypo_ara_x_ratio_err, "new_hypo_ara_x_ratio_err/D");
+        for e in nuslice_tree:
+            # No need to check quality in this loop
+            if e.flash_ara_time == -9999.: continue
+            hypo_ara_x, hypo_ara_x_err, rr_hypoX_ara, rr_hypoXRMS_ara, ratio_hypoX_ara, ratio_hypoXRMS_ara = \
+                hypo_flashx_from_H2(e.flash_ara_rr, md['rr_ara'].h2,
+                                    e.flash_ara_ratio, md['ratio_ara'].h2)
+            new_hypo_ara_x[0] = hypo_ara_x
+            new_hypo_ara_x_branch.Fill()
+            new_hypo_ara_x_err[0] = hypo_ara_x_err
+            new_hypo_ara_x_err_branch.Fill()
+            new_hypo_ara_x_rr[0] = rr_hypoX_ara
+            new_hypo_ara_x_rr_branch.Fill()
+            new_hypo_ara_x_rr_err[0] = rr_hypoXRMS_ara
+            new_hypo_x_rr_err_branch.Fill()
+            new_hypo_ara_x_ratio[0] = ratio_hypoX_ara
+            new_hypo_x_ratio_branch.Fill()
+            new_hypo_ara_x_ratio_err[0] = ratio_hypoXRMS_ara
+            new_hypo_x_ratio_err_branch.Fill()
+
+        # Fit and create std::vector objects for polynomial correction
+        # coefficients
+        y_ara_pol_coeffs = parameters_correction_fitter(nuslice_tree,
+                                                    "ara_y", "charge_y", "flash_ara_yb",
+                                                    pset.XBins,
+                                                    0., pset.DriftDistance,
+                                                    pset.fit_func_y,
+                                                    beam_spill_time_end,
+                                                    pset.SkewLimitY)
+        y_ara_pol_coeffs_vec = ROOT.std.vector['double']()
+        for yp in y_ara_pol_coeffs: y_ara_pol_coeffs_vec.push_back(yp)
+
+        z_ara_pol_coeffs = parameters_correction_fitter(nuslice_tree,
+                                                    "ara_z", "charge_z", "flash_ara_zb",
+                                                    pset.XBins,
+                                                    0., pset.DriftDistance,
+                                                    pset.fit_func_z,
+                                                    beam_spill_time_end,
+                                                    pset.SkewLimitZ)
+        z_ara_pol_coeffs_vec = ROOT.std.vector['double']()
+        for zp in z_ara_pol_coeffs: z_ara_pol_coeffs_vec.push_back(zp)
+
+        # Using the new estimation new_hypo_x, and the just fitted
+        # polynomial coefficients; get the corrected new_flash_ara_y and new_flash_ara_z
+        new_flash_ara_y = array('d',[0])
+        new_flash_ara_y_branch = nuslice_tree.Branch("new_flash_ara_y", new_flash_ara_y, "new_flash_ara_y/D");
+        new_flash_ara_z = array('d',[0])
+        new_flash_ara_z_branch = nuslice_tree.Branch("new_flash_ara_z", new_flash_ara_z, "new_flash_ara_z/D");
+        for e in nuslice_tree:
+            # No need to check quality in this loop
+            if e.flash_ara_time == -9999.: continue
+            new_flash_ara_y[0] = e.flash_ara_yb - polynomial_correction(
+                e.ara_y_skew, e.new_hypo_ara_x, y_ara_pol_coeffs, pset.SkewLimitY)
+            new_flash_ara_y_branch.Fill()
+            new_flash_ara_z[0] = e.flash_ara_zb - polynomial_correction(
+                e.ara_z_skew, e.new_hypo_ara_x, z_ara_pol_coeffs, pset.SkewLimitZ)
+            new_flash_ara_z_branch.Fill()
+
+        # Update the file
+        rootfile.Write()
+        hfile.ReOpen("UPDATE")
+        hfile.Write()
+
+        # Use the new corrected terms to fill the rest of H2s and Profs
+        for e in nuslice_tree:
+            if not quality_checks(e, beam_spill_time_end): continue
+            if e.flash_ara_time == -9999. or np.isinf(e.petoq_ara): continue
+            qX_ara = e.charge_x
+            md['dy_ara'].h2.Fill(qX_ara, e.new_flash_ara_y - e.charge_y)
+            md['dy_ara'].prof.Fill(qX_ara, e.new_flash_ara_y - e.charge_y)
+            md['dy_ara'].prof3.Fill(e.charge_x, e.charge_y, e.charge_z, e.new_flash_ara_y - e.charge_y)
+            md['dz_ara'].h2.Fill(qX_ara, e.new_flash_ara_z - e.charge_z)
+            md['dz_ara'].prof.Fill(qX_ara, e.new_flash_ara_z - e.charge_z)
+            md['dz_ara'].prof3.Fill(e.charge_x, e.charge_y, e.charge_z, e.new_flash_ara_z - e.charge_z)
+            # these H2s below use no new corrections
+            # md['slope'].h2.Fill(qX, e.flash_slope - e.charge_slope)
+            # md['slope'].prof.Fill(qX, e.flash_slope - e.charge_slope)
+            # md['slope'].prof3.Fill(e.charge_x, e.charge_y, e.charge_z, e.flash_slope - e.charge_slope)
+            md['slope_ara'].h2.Fill(qX_ara, e.flash_ara_xw)
+            md['slope_ara'].prof.Fill(qX_ara, e.flash_ara_xw)
+            md['slope_ara'].prof3.Fill(e.charge_x, e.charge_y, e.charge_z, e.flash_ara_xw)
+            md['petoq_ara'].h2.Fill(qX_ara, e.petoq_ara)
+            md['petoq_ara'].prof.Fill(qX_ara, e.petoq_ara)
+            md['petoq_ara'].prof3.Fill(e.charge_x, e.charge_y, e.charge_z, e.petoq_ara)
+
+        for m in md.values():
+            m.update_metrics()
+
+        for m in md.values():
+            m.write_metrics()
+
+    hfile.WriteObject(y_ara_pol_coeffs_vec, "ara_pol_coeffs_y")
+    hfile.WriteObject(z_ara_pol_coeffs_vec, "ara_pol_coeffs_z")
+
     hfile.Close()
 
     canv = TCanvas("canv")
@@ -632,18 +774,21 @@ def main():
     global xbin_width
     global time_delay
     global tolerable_time_diff
+    global UseARA
     if args.sbnd:
-        fcl_params = fhicl.make_pset('flashmatch_sbnd.fcl')
+        fcl_params = fhicl.make_pset("flashmatch_sbnd.fcl")
         pset = dotDict(fcl_params['sbnd_simple_flashmatch'])
         detector = "sbnd"
         time_delay = 0.15
         dir = rootfile.Get(file_updated+":/fmatch")
         nuslice_tree = dir.Get("nuslicetree")
+        UseARA = pset.UseXARAPUCAs
     elif args.icarus:
         fcl_params = fhicl.make_pset('flashmatch_simple_icarus.fcl')
         pset = dotDict(fcl_params['icarus_simple_flashmatch_E'])
         detector = "icarus"
         time_delay = 0.
+        UseARA = False
         # by default merge the trees from both Cryos
         dir0 = rootfile.Get(file_updated+":/fmatchCryoE")
         nuslice_tree0 = dir0.Get("nuslicetree")
@@ -659,6 +804,7 @@ def main():
     drift_distance = pset.DriftDistance
     x_bins = pset.XBins
     xbin_width = drift_distance/x_bins
+    print("UseARA:	", UseARA)
 
     generator(nuslice_tree, rootfile, pset)
 
