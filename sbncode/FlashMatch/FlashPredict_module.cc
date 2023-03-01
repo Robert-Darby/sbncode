@@ -17,10 +17,10 @@ FlashPredict::FlashPredict(fhicl::ParameterSet const& p)
   , fOpHitARAProducer(p.get<std::string>("OpHitARAProducer", ""))
     // , fCaloProducer(p.get<std::string>("CaloProducer"))
     // , fTrackProducer(p.get<std::string>("TrackProducer"))
-  , fOpFlashTPC0Producer(p.get<std::string>("OpFlashTPC0Producer"))
-  , fOpFlashTPC1Producer(p.get<std::string>("OpFlashTPC1Producer"))
-  , fOpFlashTPC0ARAProducer(p.get<std::string>("OpFlashTPC0ARAProducer"))
-  , fOpFlashTPC1ARAProducer(p.get<std::string>("OpFlashTPC1ARAProducer"))
+//  , fOpFlashTPC0Producer(p.get<std::string>("OpFlashTPC0Producer"))
+//  , fOpFlashTPC1Producer(p.get<std::string>("OpFlashTPC1Producer"))
+//  , fOpFlashTPC0ARAProducer(p.get<std::string>("OpFlashTPC0ARAProducer"))
+//  , fOpFlashTPC1ARAProducer(p.get<std::string>("OpFlashTPC1ARAProducer"))
   , fBeamSpillTimeStart(p.get<double>("BeamSpillTimeStart")) //us
   , fBeamSpillTimeEnd(p.get<double>("BeamSpillTimeEnd"))// us
   , fFlashFindingTimeStart(p.get<double>("FlashFindingTimeStart")) //us
@@ -34,7 +34,7 @@ FlashPredict::FlashPredict(fhicl::ParameterSet const& p)
   , fUse3DMetrics(p.get<bool>("Use3DMetrics", false)) // use metrics that depend on (X,Y,Z)
   , fCorrectDriftDistance(p.get<bool>("CorrectDriftDistance", false)) // require light and charge to coincide, different requirements for SBND and ICARUS
   , fUseARAPUCAS(p.get<bool>("UseARAPUCAS", false))
-  , fUseXARAPUCAs(p.get<bool>("UseXARAPUCAS", false))
+  , fUseXARAPUCAs(p.get<bool>("UseXARAPUCAs", false))
   , fStoreMCInfo(p.get<bool>("StoreMCInfo", false))
     // , fUseCalo(p.get<bool>("UseCalo", false))
   , fRM(loadMetrics(p.get<std::string>("InputFileName")))
@@ -145,6 +145,10 @@ FlashPredict::FlashPredict(fhicl::ParameterSet const& p)
       <<  std::boolalpha << fStoreMCInfo << "\n"
       << "Theres no point to store MC info if not making the tree" << std::endl;
 
+  if(fICARUS && fUseXARAPUCAs)
+    throw cet::exception("FlashPredict")
+      << "Cannot create XARAPUCA flashes on ICARUS" << std::endl;
+
   if (fMakeTree) initTree();
 
   consumes<std::vector<recob::PFParticle>>(fPandoraProducer);
@@ -153,10 +157,10 @@ FlashPredict::FlashPredict(fhicl::ParameterSet const& p)
   consumes<std::vector<recob::SpacePoint>>(fSpacePointProducer);
   consumes<art::Assns<recob::Hit, recob::SpacePoint>>(fSpacePointProducer);
   consumes<std::vector<recob::OpHit>>(fOpHitProducer);
-  consumes<std::vector<recob::OpFlash>>(fOpFlashTPC0Producer);
-  consumes<std::vector<recob::OpFlash>>(fOpFlashTPC1Producer);
-  consumes<std::vector<recob::OpFlash>>(fOpFlashTPC0ARAProducer);
-  consumes<std::vector<recob::OpFlash>>(fOpFlashTPC1ARAProducer);
+//  consumes<std::vector<recob::OpFlash>>(fOpFlashTPC0Producer);
+//  consumes<std::vector<recob::OpFlash>>(fOpFlashTPC1Producer);
+//  consumes<std::vector<recob::OpFlash>>(fOpFlashTPC0ARAProducer);
+//  consumes<std::vector<recob::OpFlash>>(fOpFlashTPC1ARAProducer);
   if(fUseARAPUCAS && !fOpHitARAProducer.empty())
     consumes<std::vector<recob::OpHit>>(fOpHitARAProducer);
 } // FlashPredict::FlashPredict(fhicl::ParameterSet const& p)
@@ -261,29 +265,29 @@ void FlashPredict::produce(art::Event& evt)
     }
   }
 
-  art::Handle<std::vector<recob::OpFlash>> opflash_0_h;
-  evt.getByLabel(fOpFlashTPC0Producer, opflash_0_h);
-  std::vector<recob::OpFlash> opflash0(opflash_0_h->size());
-  copyOpFlashesInFlashFindingWindow(opflash0, opflash_0_h);
-  for(auto& flashyboi : opflash0) _opflash_tpc0_t.push_back(flashyboi.Time());
+//  art::Handle<std::vector<recob::OpFlash>> opflash_0_h;
+//  evt.getByLabel(fOpFlashTPC0Producer, opflash_0_h);
+//  std::vector<recob::OpFlash> opflash0(opflash_0_h->size());
+//  copyOpFlashesInFlashFindingWindow(opflash0, opflash_0_h);
+//  for(auto& flashyboi : opflash0) _opflash_tpc0_t.push_back(flashyboi.Time());
 
-  art::Handle<std::vector<recob::OpFlash>> opflash_1_h;
-  evt.getByLabel(fOpFlashTPC1Producer, opflash_1_h);
-  std::vector<recob::OpFlash> opflash1(opflash_1_h->size());
-  copyOpFlashesInFlashFindingWindow(opflash1, opflash_1_h);
-  for(auto& flashyboi : opflash1) _opflash_tpc1_t.push_back(flashyboi.Time());
+//  art::Handle<std::vector<recob::OpFlash>> opflash_1_h;
+//  evt.getByLabel(fOpFlashTPC1Producer, opflash_1_h);
+//  std::vector<recob::OpFlash> opflash1(opflash_1_h->size());
+//  copyOpFlashesInFlashFindingWindow(opflash1, opflash_1_h);
+//  for(auto& flashyboi : opflash1) _opflash_tpc1_t.push_back(flashyboi.Time());
 
-  art::Handle<std::vector<recob::OpFlash>> opflash_ara0_h;
-  evt.getByLabel(fOpFlashTPC0ARAProducer, opflash_ara0_h);
-  std::vector<recob::OpFlash> opflash0ara(opflash_ara0_h->size());
-  copyOpFlashesInFlashFindingWindow(opflash0ara, opflash_ara0_h);
-  for(auto& flashyboi : opflash0ara) _opflash_tpc0_ara_t.push_back(flashyboi.Time());
+//  art::Handle<std::vector<recob::OpFlash>> opflash_ara0_h;
+//  evt.getByLabel(fOpFlashTPC0ARAProducer, opflash_ara0_h);
+//  std::vector<recob::OpFlash> opflash0ara(opflash_ara0_h->size());
+//  copyOpFlashesInFlashFindingWindow(opflash0ara, opflash_ara0_h);
+//  for(auto& flashyboi : opflash0ara) _opflash_tpc0_ara_t.push_back(flashyboi.Time());
 
-  art::Handle<std::vector<recob::OpFlash>> opflash_ara1_h;
-  evt.getByLabel(fOpFlashTPC1ARAProducer, opflash_ara1_h);
-  std::vector<recob::OpFlash> opflash1ara(opflash_ara1_h->size());
-  copyOpFlashesInFlashFindingWindow(opflash1ara, opflash_ara1_h);
-  for(auto& flashyboi : opflash1ara) _opflash_tpc1_ara_t.push_back(flashyboi.Time());
+//  art::Handle<std::vector<recob::OpFlash>> opflash_ara1_h;
+//  evt.getByLabel(fOpFlashTPC1ARAProducer, opflash_ara1_h);
+//  std::vector<recob::OpFlash> opflash1ara(opflash_ara1_h->size());
+//  copyOpFlashesInFlashFindingWindow(opflash1ara, opflash_ara1_h);
+//  for(auto& flashyboi : opflash1ara) _opflash_tpc1_ara_t.push_back(flashyboi.Time());
 
   // load OpHits previously created
   art::Handle<std::vector<recob::OpHit>> ophits_h;
@@ -357,16 +361,16 @@ void FlashPredict::produce(art::Event& evt)
   // Get vector of intime flashes from PMTs
   std::vector<recob::OpHit> opHitsRght, opHitsLeft;
   const std::vector<SimpleFlash> simpleFlashes = (fSBND) ?
-    makeSimpleFlashes(opHits, opHitsRght, opHitsLeft) : makeSimpleFlashes(opHits);
+        makeSimpleFlashes(opHits, opHitsRght, opHitsLeft) : makeSimpleFlashes(opHits);
   auto is_flash_in_time = [this](const SimpleFlash& f) -> bool
   { return (fBeamSpillTimeStart<=f.maxpeak_time &&
             f.maxpeak_time<=fBeamSpillTimeEnd); };
   auto flash_in_time = std::find_if(simpleFlashes.begin(), simpleFlashes.end(),
                                     is_flash_in_time);
  // Get vector of intime flashes from ARAPUCAs
-    const std::vector<SimpleFlash> simpleFlashes_ara =
-      makeSimpleFlashes(opHits_ara);
-//    auto is_flash_in_time = [this](const SimpleFlash& f) -> bool
+    std::vector<recob::OpHit> opHitsRight_ara, opHitsLeft_ara; 
+    const std::vector<SimpleFlash> simpleFlashes_ara = 
+        makeSimpleFlashes(opHits_ara, opHitsRight_ara, opHitsLeft_ara);
 //    { return (fBeamSpillTimeStart<=f.maxpeak_time &&
 //              f.maxpeak_time<=fBeamSpillTimeEnd); };
 //    auto flash_in_time_ara = std::find_if(simpleFlashes_ara.begin(), simpleFlashes_ara.end(),
@@ -394,7 +398,7 @@ void FlashPredict::produce(art::Event& evt)
 
   ChargeDigestMap chargeDigestMap = makeChargeDigest(evt, pfps_h);
 
-  std::map<unsigned, FlashMetrics> flashMetricsMap;
+  std::map<unsigned, FlashMetrics> flashMetricsMap, flashMetricsMap_ara;
   for(auto& chargeDigestPair : chargeDigestMap) {
     const auto& chargeDigest = chargeDigestPair.second;
     const auto& pfp_ptr = chargeDigest.pfp_ptr;
@@ -424,19 +428,13 @@ void FlashPredict::produce(art::Event& evt)
       continue;
     }
 
-    FlashMetrics ara_flash, ara_flash_tmp;
-    for(unsigned ara_id=0; ara_id< simpleFlashes_ara.size(); ara_id++) {
-      auto flashara = simpleFlashes_ara.at(ara_id);
-      ara_flash_tmp = computeFlashMetrics(flashara);
-      if(ara_flash_tmp.pe > ara_flash.pe) {
-        ara_flash = ara_flash_tmp;
-      }      
-    }
-    
 
     FlashMetrics flash = {};
+    FlashMetrics flash_ara = {};
     Score score = {std::numeric_limits<double>::max()};
+    Score score_ara = {std::numeric_limits<double>::max()};
     bool hits_ophits_concurrence = false;
+    bool hits_ophits_concurrence_ara = false;
     for(auto& simpleFlash : simpleFlashes) {
       unsigned ophsInVolume = simpleFlash.ophsInVolume;
       if(hitsInVolume != ophsInVolume){
@@ -481,6 +479,46 @@ void FlashPredict::produce(art::Event& evt)
         // }
       }
     } // for simpleFlashes
+
+
+    if(fSBND && fUseXARAPUCAs) {
+      for(auto& simpleFlash : simpleFlashes_ara) {
+        unsigned ophsInVolume = simpleFlash.ophsInVolume;
+        if(hitsInVolume != ophsInVolume){
+          if(fForceConcurrence) continue;
+          else if((hitsInVolume < kActivityInBoth) &&
+                  (ophsInVolume < kActivityInBoth)) {
+            continue;
+          }
+        }
+        hits_ophits_concurrence_ara = true;
+  
+        unsigned flashUId = simpleFlash.ophsInVolume * 10 + simpleFlash.flashId;
+        bool mets_in_map = flashMetricsMap_ara.find(flashUId) != flashMetricsMap_ara.end();
+        FlashMetrics flash_tmp = (mets_in_map) ?
+          flashMetricsMap_ara[flashUId] : computeFlashMetrics(simpleFlash, true);
+        if(mets_in_map){
+          mf::LogDebug("FlashPredict")
+            << "Reusing metrics previously computed, for ARA flashUId " << flashUId;
+        }
+        else
+          flashMetricsMap_ara[flashUId] = flash_tmp;
+  
+        Score score_tmp = (fUse3DMetrics) ? computeScore3D(charge, flash_tmp) :
+          computeARAScore(charge, flash_tmp);
+        if(0. <= score_tmp.total && score_tmp.total < score.total
+           && flash_tmp.metric_ok){
+          score_ara = score_tmp;
+          flash_ara = flash_tmp;
+          // // TODO: create charge.xb and/or charge.xb_gl
+          // if (fCorrectDriftDistance){
+          //   charge.x = driftCorrection(charge.xb, flash.time);
+          //   charge.x_gl  = xGlCorrection(charge.x_gl, charge.xb, flash.time);
+          // }
+        }
+      } // for simpleFlashes
+    } // XARAPUCA if statement
+
     if(!hits_ophits_concurrence) {
       std::string extra_message = (!fForceConcurrence) ? "" :
         "\nConsider setting ForceConcurrence to false to lower requirements";
@@ -494,13 +532,37 @@ void FlashPredict::produce(art::Event& evt)
       continue;
     }
     else if(!flash.metric_ok){
-      printMetrics("ERROR", charge, flash, 0, mf::LogError("FlashPredict"));
+      printMetrics("PMT ERROR", charge, flash, 0, mf::LogError("FlashPredict"));
       bk.no_flash_pe++;
       mf::LogDebug("FlashPredict") << "Creating sFM and PFP-sFM association";
       sFM_v->emplace_back(sFM(kNoScr, kNoScrTime, Charge(kNoScrQ),
                               Flash(kNoScrPE), Score(k0VUVPEScr)));
       util::CreateAssn(*this, evt, *sFM_v, pfp_ptr, *pfp_sFM_assn_v);
       continue;
+    }
+
+    if(fSBND && fUseXARAPUCAs) {
+      if(!hits_ophits_concurrence_ara) {
+        std::string extra_message = (!fForceConcurrence) ? "" :
+          "\nConsider setting ARAForceConcurrence to false to lower requirements";
+        mf::LogInfo("FlashPredict")
+          << "No XARAPUCA OpHits where there's charge. Skipping..." << extra_message;
+        bk.no_oph_hits++;
+        mf::LogDebug("FlashPredict") << "Creating XARAPUCA sFM and PFP-sFM association";
+        sFM_v->emplace_back(sFM(kNoScr, kNoScrTime, Charge(kNoScrQ),
+                                Flash(kNoScrPE), Score(kQNoOpHScr)));
+        util::CreateAssn(*this, evt, *sFM_v, pfp_ptr, *pfp_sFM_assn_v);
+        continue;
+      }
+      else if(!flash_ara.metric_ok){
+        printMetrics("ARA ERROR", charge, flash_ara, 0, mf::LogError("FlashPredict"));
+        bk.no_flash_pe++;
+        mf::LogDebug("FlashPredict") << "Creating XARAPUCA  sFM and PFP-sFM association";
+        sFM_v->emplace_back(sFM(kNoScr, kNoScrTime, Charge(kNoScrQ),
+                                Flash(kNoScrPE), Score(k0VUVPEScr)));
+        util::CreateAssn(*this, evt, *sFM_v, pfp_ptr, *pfp_sFM_assn_v);
+        continue;
+      }
     }
 
     if(0. <= score.total &&
@@ -511,7 +573,11 @@ void FlashPredict::produce(art::Event& evt)
         _petoq = PEToQ(flash.pe, charge.q);
         updateChargeMetrics(charge);
         updateFlashMetrics(flash);
-        updateARAFlashMetrics(ara_flash);
+        if(fUseXARAPUCAs) {
+          updateARAFlashMetrics(flash_ara);
+          _petoq_ara = PEToQ(flash_ara.pe, charge.q);
+          updateARAScore(score_ara);
+        }
         updateScore(score);
         _flashmatch_nuslice_tree->Fill();
       }
@@ -534,7 +600,7 @@ void FlashPredict::produce(art::Event& evt)
         << "score.ratio: " << score.ratio << "\n"
         << "score.slope: " << score.slope << "\t"
         << "score.petoq: " << score.petoq << "\n";
-      printMetrics("ERROR", charge, flash, 0, mf::LogError("FlashPredict"));
+      printMetrics("ScoreERROR", charge, flash, 0, mf::LogError("FlashPredict"));
     }
 
   } // chargeDigestMap: PFparticles that pass criteria
@@ -626,6 +692,7 @@ _flashmatch_nuslice_tree->Branch("flash_id", &_flash_id, "flash_id/I");
   _flashmatch_nuslice_tree->Branch("charge_slope", &_charge_slope, "charge_slope/D");
   _flashmatch_nuslice_tree->Branch("charge_q", &_charge_q, "charge_q/D");
   _flashmatch_nuslice_tree->Branch("petoq", &_petoq, "petoq/D");
+  _flashmatch_nuslice_tree->Branch("petoq_ara", &_petoq_ara, "petoq_ara/D");
   _flashmatch_nuslice_tree->Branch("score", &_score, "score/D");
   _flashmatch_nuslice_tree->Branch("scr_y", &_scr_y, "scr_y/D");
   _flashmatch_nuslice_tree->Branch("scr_z", &_scr_z, "scr_z/D");
@@ -633,6 +700,15 @@ _flashmatch_nuslice_tree->Branch("flash_id", &_flash_id, "flash_id/I");
   _flashmatch_nuslice_tree->Branch("scr_ratio", &_scr_ratio, "scr_ratio/D");
   _flashmatch_nuslice_tree->Branch("scr_slope", &_scr_slope, "scr_slope/D");
   _flashmatch_nuslice_tree->Branch("scr_petoq", &_scr_petoq, "scr_petoq/D");
+
+  _flashmatch_nuslice_tree->Branch("score_ara", &_score_ara, "score_ara/D");
+  _flashmatch_nuslice_tree->Branch("scr_y_ara", &_scr_y_ara, "scr_y_ara/D");
+  _flashmatch_nuslice_tree->Branch("scr_z_ara", &_scr_z_ara, "scr_z_ara/D");
+  _flashmatch_nuslice_tree->Branch("scr_rr_ara", &_scr_rr_ara, "scr_rr_ara/D");
+//  _flashmatch_nuslice_tree->Branch("scr_ratio_ara", &_scr_ratio_ara, "scr_ratio_ara/D");
+  _flashmatch_nuslice_tree->Branch("scr_slope_ara", &_scr_slope_ara, "scr_slope_ara/D");
+  _flashmatch_nuslice_tree->Branch("scr_petoq_ara", &_scr_petoq_ara, "scr_petoq_ara/D");
+
   _flashmatch_nuslice_tree->Branch("is_nu", &_is_nu, "is_nu/I");
   _flashmatch_nuslice_tree->Branch("mcT0", &_mcT0, "mcT0/D");
 }
@@ -680,6 +756,27 @@ FlashPredict::ReferenceMetrics FlashPredict::loadMetrics(
       << "The metrics file '" << fname << "'lacks at least one metric.";
   }
   //
+
+  if(fSBND && fUseXARAPUCAs) {
+    mf::LogInfo("FlashPredict") << "Opening file with metrics: " << fname;
+    TFile *infile = new TFile(fname.c_str(), "READ");
+    auto metricsInFile = infile->GetListOfKeys();
+    if(!metricsInFile->Contains("dy_ara_h1") ||
+       !metricsInFile->Contains("dz_ara_h1") ||
+       !metricsInFile->Contains("rr_ara_h1") ||
+       !metricsInFile->Contains("ratio_ara_h1") ||
+       !metricsInFile->Contains("slope_ara_h1") ||
+       !metricsInFile->Contains("petoq_ara_h1") ||
+       !metricsInFile->Contains("ara_pol_coeffs_y") ||
+       !metricsInFile->Contains("ara_pol_coeffs_z"))
+    {
+      mf::LogError("FlashPredict")
+        << "The metrics file '" << fname << "' lacks at least one XARAPUCA metric.";
+      throw cet::exception("FlashPredict")
+        << "The metrics file '" << fname << "'lacks at least one XARAPUCA metric.";
+    }
+    //
+  }
   TH1 *temphisto = (TH1*)infile->Get("dy_h1");
   int bins = temphisto->GetNbinsX();
   for (int ib = 1; ib <= bins; ++ib) {
@@ -789,6 +886,89 @@ FlashPredict::ReferenceMetrics FlashPredict::loadMetrics(
   TProfile3D* tmp6_prof3 = (TProfile3D*)infile->Get("petoq_prof3");
   rm.PEToQP3 = (TProfile3D*)tmp6_prof3->Clone("PEToQP3");
 
+
+  if(fSBND && fUseXARAPUCAs) {
+
+    TH1 *temphisto = (TH1*)infile->Get("dy_ara_h1");
+    int bins = temphisto->GetNbinsX();
+    for (int ib = 1; ib <= bins; ++ib) {
+      rm.dYMeans_ara.push_back(temphisto->GetBinContent(ib));
+      rm.dYSpreads_ara.push_back(temphisto->GetBinError(ib));
+    }
+    //
+    temphisto = (TH1*)infile->Get("dz_ara_h1");
+    bins = temphisto->GetNbinsX();
+    for (int ib = 1; ib <= bins; ++ib) {
+      rm.dZMeans_ara.push_back(temphisto->GetBinContent(ib));
+      rm.dZSpreads_ara.push_back(temphisto->GetBinError(ib));
+    }
+    //
+    temphisto = (TH1*)infile->Get("rr_ara_h1");
+    bins = temphisto->GetNbinsX();
+    for (int ib = 1; ib <= bins; ++ib) {
+      rm.RRMeans_ara.push_back(temphisto->GetBinContent(ib));
+      rm.RRSpreads_ara.push_back(temphisto->GetBinError(ib));
+    }
+
+    temphisto = (TH1*)infile->Get("ratio_ara_h1");
+    bins = temphisto->GetNbinsX();
+    for (int ib = 1; ib <= bins; ++ib) {
+      rm.RatioMeans_ara.push_back(temphisto->GetBinContent(ib));
+      rm.RatioSpreads_ara.push_back(temphisto->GetBinError(ib));
+    }
+
+    temphisto = (TH1*)infile->Get("slope_ara_h1");
+    bins = temphisto->GetNbinsX();
+    for (int ib = 1; ib <= bins; ++ib) {
+      rm.SlopeMeans_ara.push_back(temphisto->GetBinContent(ib));
+      rm.SlopeSpreads_ara.push_back(temphisto->GetBinError(ib));
+    }
+    //
+    temphisto = (TH1*)infile->Get("petoq_ara_h1");
+    bins = temphisto->GetNbinsX();
+    for (int ib = 1; ib <= bins; ++ib) {
+      rm.PEToQMeans_ara.push_back(temphisto->GetBinContent(ib));
+      rm.PEToQSpreads_ara.push_back(temphisto->GetBinError(ib));
+    }
+
+    TH2* tmp1_h2 = (TH2*)infile->Get("rr_ara_h2");
+    rm.RRH2_ara = (TH2D*)tmp1_h2->Clone("RRH2_ara");
+    TH2* tmp2_h2 = (TH2*)infile->Get("ratio_ara_h2");
+    rm.RatioH2_ara = (TH2D*)tmp2_h2->Clone("RatioH2_ara");
+  
+    std::vector<double>* polCoeffsY_p_ara;
+    infile->GetObject("ara_pol_coeffs_y", polCoeffsY_p_ara);
+    rm.PolCoeffsY_ara = std::vector(*polCoeffsY_p_ara);
+    std::string tty = "Polynomial correction coefficients for Y (ARA): ( ";
+    for(double c : rm.PolCoeffsY_ara) tty += std::to_string(c) + " ";
+    tty += ")";
+    mf::LogInfo("FlashPredict") << tty;
+
+    std::vector<double>* polCoeffsZ_p_ara;
+    infile->GetObject("ara_pol_coeffs_z", polCoeffsZ_p_ara);
+    rm.PolCoeffsZ_ara = std::vector(*polCoeffsZ_p_ara);
+    std::string ttz = "Polynomial correction coefficients for Z (ARA): ( ";
+    for(double c : rm.PolCoeffsZ_ara) ttz += std::to_string(c) + " ";
+    ttz += ")";
+    mf::LogInfo("FlashPredict") << ttz;
+
+    // BIG TODO: Metrics should depend on X,Y,Z.
+    // TODO: Test!
+    // TODO: store 3D-arrays of means and spreads, instead of the
+    // TProfile3D
+    TProfile3D* tmp1_prof3 = (TProfile3D*)infile->Get("dy_ara_prof3");
+    rm.dYP3_ara = (TProfile3D*)tmp1_prof3->Clone("dYP3_ara");
+    TProfile3D* tmp2_prof3 = (TProfile3D*)infile->Get("dz_ara_prof3");
+    rm.dZP3_ara = (TProfile3D*)tmp2_prof3->Clone("dZP3_ara");
+    TProfile3D* tmp3_prof3 = (TProfile3D*)infile->Get("rr_ara_prof3");
+    rm.RRP3_ara = (TProfile3D*)tmp3_prof3->Clone("RRP3_ara");
+    TProfile3D* tmp4_prof3 = (TProfile3D*)infile->Get("ratio_ara_prof3");
+    rm.RatioP3_ara = (TProfile3D*)tmp4_prof3->Clone("RatioP3_ara");
+    TProfile3D* tmp5_prof3 = (TProfile3D*)infile->Get("slope_ara_prof3");
+    rm.SlopeP3_ara = (TProfile3D*)tmp5_prof3->Clone("SlopeP3_ara");
+    TProfile3D* tmp6_prof3 = (TProfile3D*)infile->Get("petoq_ara_prof3");
+    rm.PEToQP3_ara = (TProfile3D*)tmp6_prof3->Clone("PEToQP3_ara");
+  }
   infile->Close();
   delete infile;
   mf::LogInfo("FlashPredict") << "Finish loading metrics";
@@ -901,8 +1081,13 @@ FlashPredict::ChargeMetrics FlashPredict::computeChargeMetrics(
 
 
 FlashPredict::FlashMetrics FlashPredict::computeFlashMetrics(
-  const SimpleFlash& simpleFlash) const
+  const SimpleFlash& simpleFlash,
+  bool UseARA) const
 {
+  if(fICARUS && UseARA)
+    throw cet::exception("FlashPredict")
+      << "Cannot create XARAPUCA flash metrics on ICARUS" << std::endl;
+
   const OpHitIt opH_beg = simpleFlash.opH_beg;
   const OpHitIt opH_end = simpleFlash.opH_end;
 
@@ -966,7 +1151,7 @@ FlashPredict::FlashMetrics FlashPredict::computeFlashMetrics(
     }
   } // for opHits
 
-  if (sum_PE > 0.) {
+  if (sum_PE >= 0.) {
     FlashMetrics flash;
     flash.metric_ok = true;
     flash.id = simpleFlash.flashId;
@@ -992,13 +1177,13 @@ FlashPredict::FlashMetrics FlashPredict::computeFlashMetrics(
     flash.ratio = fOpDetNormalizer * flash.unpe / flash.pe;
     if(fSBND){
       flash.ratio = (fOpDetNormalizer * flash.unpe) / (flash.pe - flash.unpe);
-      if(fUseARAPUCAS) {
-        // TODO: come up with a sensible way to mix PMT and ARAPUCA
-        // flash ratios a potential better approach is to take the
-        // average of the two separate ratios
-        flash.unpe += sum_visARA_PE;
-        flash.ratio = (fOpDetNormalizer * sum_unPE  + sum_visARA_PE ) / flash.pe;
-      }
+//      if(fUseXARAPUCAs) {
+//        // TODO: come up with a sensible way to mix PMT and ARAPUCA
+//        // flash ratios a potential better approach is to take the
+//        // average of the two separate ratios
+//        flash.unpe += sum_visARA_PE;
+//        flash.ratio = (fOpDetNormalizer * sum_unPE  + sum_visARA_PE ) / flash.pe;
+//      }
     }
     flash.yb  = sum_PE2Y / sum_PE2;
     flash.zb  = sum_PE2Z / sum_PE2;
@@ -1007,7 +1192,8 @@ FlashPredict::FlashMetrics FlashPredict::computeFlashMetrics(
                - 2.0 * (flash.yb * sum_PE2Y + flash.zb * sum_PE2Z) ) / sum_PE2);
 
     std::tie(flash.h_x, flash.h_xerr, flash.h_xrr, flash.h_xratio) =
-      hypoFlashX_H2(flash.rr, flash.ratio);
+      (UseARA) ?  hypoARAFlashX_H2(flash.rr) :
+                  hypoFlashX_H2(flash.rr, flash.ratio);
 
     // TODO: using _hypo_x make further corrections to _flash_time to
     // account for light transport time and/or rising edge
@@ -1125,6 +1311,84 @@ FlashPredict::Score FlashPredict::computeScore(
     << "score.petoq: " << score.petoq << "\n";
   return score;
 }
+
+FlashPredict::Score FlashPredict::computeARAScore(
+  const ChargeMetrics& charge,
+  const FlashMetrics& flash) const
+{
+  Score score{0.};
+  unsigned tcount = 0;
+  double charge_x = (fCorrectDriftDistance) ?
+    driftCorrection(charge.x, flash.time) : charge.x;
+  int xbin = static_cast<int>(fXBins * (charge_x / fDriftDistance));
+  if (charge_x < 0.) xbin = 0;
+  else if (charge_x > fDriftDistance) xbin = fXBins - 1;
+
+  score.y = scoreTerm(flash.y, charge.y, fRM.dYMeans_ara[xbin], fRM.dYSpreads_ara[xbin]);
+  if(score.y > fTermThreshold) printMetrics("ARA Y", charge, flash, score.y,
+                                            mf::LogDebug("FlashPredict"));
+  score.total += score.y;
+  tcount++;
+  score.z = scoreTerm(flash.z, charge.z, fRM.dZMeans_ara[xbin], fRM.dZSpreads_ara[xbin]);
+  if(score.z > fTermThreshold) printMetrics("ARA Z", charge, flash, score.z,
+                                            mf::LogDebug("FlashPredict"));
+  score.total += score.z;
+  tcount++;
+  score.rr = scoreTerm(flash.rr, fRM.RRMeans_ara[xbin], fRM.RRSpreads_ara[xbin]);
+  if(score.rr > fTermThreshold) printMetrics("ARA RR", charge, flash, score.rr,
+                                             mf::LogDebug("FlashPredict"));
+  score.total += score.rr;
+  tcount++;
+
+// TODO: Make Ratio variable for XARAPUCA flashes
+//  score.ratio = scoreTerm(flash.ratio, fRM.RatioMeans[xbin], fRM.RatioSpreads[xbin]);
+//  if(fICARUS && !std::isnan(flash.h_x)){
+//    // TODO HACK to penalise matches with flash and charge on opposite volumes
+//    double charge_x_gl = (fCorrectDriftDistance) ?
+//      xGlCorrection(charge.x_gl, charge.x, flash.time) : charge.x_gl;
+//    double x_gl_diff = std::abs(flash.x_gl-charge_x_gl);
+//    double x_diff = std::abs(flash.h_x-charge_x);
+//    double cathode_tolerance = 30.;
+//    if(x_gl_diff > x_diff + cathode_tolerance) { // ok if close to the cathode
+//      double penalization = scoreTerm((flash.pe-flash.unpe)/flash.pe,
+//                                      fRM.RatioMeans[xbin], fRM.RatioSpreads[xbin]);
+//      score.ratio += penalization;
+//      mf::LogWarning("FlashPredict")
+//        << "HACK: Penalizing match with flash and charge in opposite volumes."
+//        << "\nflash.x_gl: " << flash.x_gl << " charge.x_gl: " << charge.x_gl
+//        << "\nX distance between them: " << x_gl_diff
+//        << "\nscore.ratio: " << score.ratio
+//        << "\nscore penalization: " << penalization;
+//    }
+//  }
+//  if(score.ratio > fTermThreshold) printMetrics("RATIO", charge, flash, score.ratio,
+//                                                mf::LogDebug("FlashPredict"));
+//  score.total += score.ratio;
+//  tcount++;
+   //score.slope = scoreTerm(flash.slope, charge.slope, fRM.SlopeMeans_ara[xbin], fRM.SlopeSpreads_ara[xbin]);
+  score.slope = scoreTerm(flash.xw, fRM.SlopeMeans_ara[xbin], fRM.SlopeSpreads_ara[xbin]); // TODO: are you a better metric?
+  if(score.slope > fTermThreshold) printMetrics("ARA SLOPE", charge, flash, score.slope,
+                                                mf::LogDebug("FlashPredict"));
+  // TODO: if useful add it to the total score
+  // score.total += score.slope;
+  // tcount++;
+  // TODO: if useful add it to the total score
+  score.petoq = scoreTerm(std::log(flash.pe)/std::log(charge.q), fRM.PEToQMeans_ara[xbin], fRM.PEToQSpreads_ara[xbin]);
+  if(score.petoq > fTermThreshold) printMetrics("ARA LIGHT/CHARGE", charge, flash, score.petoq,
+                                                mf::LogDebug("FlashPredict"));
+  score.total += score.petoq;
+  tcount++;
+  mf::LogDebug("FlashPredict")
+    << "score:       " << score.total << "using " << tcount << " terms\n"
+    << "score.y:     " << score.y << "\t"
+    << "score.z:     " << score.z << "\n"
+    << "score.rr:    " << score.rr << "\t"
+//    << "score.ratio: " << score.ratio << "\n"
+    << "score.slope: " << score.slope << "\t"
+    << "score.petoq: " << score.petoq << "\n";
+  return score;
+}
+
 
 
 FlashPredict::Score FlashPredict::computeScore3D(
@@ -1318,6 +1582,33 @@ std::tuple<double, double, double, double> FlashPredict::hypoFlashX_H2(
     // inconsistent estimates, resulting error is larger
     hypo_x_err = std::sqrt(drr2 + dratio2);
   }
+  return {hypo_x, hypo_x_err, rr_hypoX, ratio_hypoX};
+}
+
+std::tuple<double, double, double, double> FlashPredict::hypoARAFlashX_H2(
+  double flash_rr) const
+{
+  auto[rr_hypoX, rr_hypoXRMS] = xEstimateAndRMS(flash_rr, fRM.RRH2_ara);
+//  auto[ratio_hypoX, ratio_hypoXRMS] = xEstimateAndRMS(flash_ratio, fRM.RatioH2);
+  double ratio_hypoX = -9999.;
+//  double ratio_hypoXRMS = -9999.;
+
+//  double drr2 = rr_hypoXRMS*rr_hypoXRMS;
+//  adouble dratio2 = ratio_hypoXRMS*ratio_hypoXRMS;
+//  double rr_hypoXWgt = 1./drr2;
+//  double ratio_hypoXWgt = 1./dratio2;
+//  double sum_weights = rr_hypoXWgt + ratio_hypoXWgt;
+//  double hypo_x =
+//    (rr_hypoX*rr_hypoXWgt + ratio_hypoX*ratio_hypoXWgt) / sum_weights;
+//  // consistent estimates, resulting error is smaller
+//  double hypo_x_err = std::sqrt(1./sum_weights);
+//  if (std::abs(rr_hypoX - ratio_hypoX) > 2.*std::sqrt(drr2+dratio2)){
+//    // inconsistent estimates, resulting error is larger
+//    hypo_x_err = std::sqrt(drr2 + dratio2);
+//  }
+
+  double hypo_x = rr_hypoX;
+  double hypo_x_err = rr_hypoXRMS;
   return {hypo_x, hypo_x_err, rr_hypoX, ratio_hypoX};
 }
 
@@ -1587,6 +1878,12 @@ void FlashPredict::updateScore(const Score& score)
   _score = score.total, _scr_y = score.y, _scr_z = score.z,
     _scr_rr = score.rr, _scr_ratio = score.ratio,
     _scr_slope = score.slope, _scr_petoq = score.petoq;
+}
+void FlashPredict::updateARAScore(const Score& score)
+{
+  _score_ara = score.total, _scr_y_ara = score.y, _scr_z_ara = score.z,
+    _scr_rr_ara = score.rr, _scr_ratio_ara = score.ratio,
+    _scr_slope_ara = score.slope, _scr_petoq_ara = score.petoq;
 }
 
 

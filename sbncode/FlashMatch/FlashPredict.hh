@@ -97,6 +97,17 @@ public:
     std::array<Fits, 3> RatioFits; // LEGACY
     TProfile3D* dYP3; TProfile3D* dZP3; TProfile3D* RRP3;
     TProfile3D* RatioP3; TProfile3D* SlopeP3; TProfile3D* PEToQP3;
+
+    std::vector<double> dYMeans_ara, dZMeans_ara, RRMeans_ara, RatioMeans_ara,
+      SlopeMeans_ara, PEToQMeans_ara;
+    std::vector<double> dYSpreads_ara, dZSpreads_ara, RRSpreads_ara, RatioSpreads_ara,
+      SlopeSpreads_ara, PEToQSpreads_ara;
+    std::vector<double> PolCoeffsY_ara, PolCoeffsZ_ara;
+    TH2D* RRH2_ara; TH2D* RatioH2_ara;
+    std::array<Fits, 3> RRFits_ara; // LEGACY
+    std::array<Fits, 3> RatioFits_ara; // LEGACY
+    TProfile3D* dYP3_ara; TProfile3D* dZP3_ara; TProfile3D* RRP3_ara;
+    TProfile3D* RatioP3_ara; TProfile3D* SlopeP3_ara; TProfile3D* PEToQP3_ara;
   };
 
   struct ChargeDigest {
@@ -275,8 +286,11 @@ private:
     const std::vector<art::Ptr<simb::MCParticle>>& mcParticles) const;
   ChargeMetrics computeChargeMetrics(
     const ChargeDigest& chargeDigest) const;
-  FlashMetrics computeFlashMetrics(const SimpleFlash& simpleFlash) const;
+  FlashMetrics computeFlashMetrics(const SimpleFlash& simpleFlash,
+    bool UseARA = false) const;
   Score computeScore(const ChargeMetrics& charge,
+                     const FlashMetrics& flash) const;
+  Score computeARAScore(const ChargeMetrics& charge,
                      const FlashMetrics& flash) const;
   Score computeScore3D(const ChargeMetrics& charge,
                        const FlashMetrics& flash) const;
@@ -284,6 +298,8 @@ private:
     double flash_rr, double flash_ratio) const;
   std::tuple<double, double, double, double> hypoFlashX_H2(
     double flash_rr, double flash_ratio) const;
+  std::tuple<double, double, double, double> hypoARAFlashX_H2(
+    double flash_rr) const;
   std::tuple<double, double> xEstimateAndRMS(
     double metric_value, const TH2D* metric_h2) const;
   ChargeDigestMap makeChargeDigest(
@@ -298,6 +314,7 @@ private:
   void updateFlashMetrics(const FlashMetrics& flashMetrics);
   void updateARAFlashMetrics(const FlashMetrics& flashMetrics);
   void updateScore(const Score& score);
+  void updateARAScore(const Score& score);
   inline double scoreTerm(const double m, const double n,
                           const double mean, const double spread) const;
   inline double scoreTerm(const double m,
@@ -446,9 +463,11 @@ private:
     _flash_ara_pe, _flash_ara_unpe, _flash_ara_time,
     _hypo_ara_x, _hypo_ara_x_err, _hypo_ara_x_rr, _hypo_ara_x_ratio,
     _y_ara_skew, _z_ara_skew, _y_ara_kurt, _z_ara_kurt;
-  double _petoq;
+  double _petoq, _petoq_ara;
   double _score, _scr_y, _scr_z, _scr_rr, _scr_ratio,
     _scr_slope, _scr_petoq;
+  double _score_ara, _scr_y_ara, _scr_z_ara, _scr_rr_ara, _scr_ratio_ara,
+    _scr_slope_ara, _scr_petoq_ara;
   unsigned _evt, _run, _sub;
   unsigned _slices = -1; unsigned _is_nu = -1;
   double _mcT0 = -9999.;
