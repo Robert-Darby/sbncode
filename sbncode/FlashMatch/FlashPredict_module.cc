@@ -249,91 +249,10 @@ void FlashPredict::produce(art::Event& evt)
     }
   }
 
-  // load OpHits previously created
-  std::vector<SimpleFlash> simpleFlashes;
-  std::vector<recob::OpHit> opHitsRght, opHitsLeft, opHits;
-  std::vector<FlashMetrics> flashMetrics;
-  if(fIsSimple) {  // Metrics for SimpleFlashes
-    art::Handle<std::vector<recob::OpHit>> ophits_h;
-    evt.getByLabel(fOpHitProducer, ophits_h);
-    if(!ophits_h.isValid()) {
-      mf::LogError("FlashPredict")
-        << "No optical hits from producer module "
-        << fOpHitProducer;
-      bk.nonvalidophit++;
-      updateBookKeeping();
-      for(size_t pId=0; pId<pfps_h->size(); pId++) {
-        if(!pfps_h->at(pId).IsPrimary()) continue;
-        const art::Ptr<recob::PFParticle> pfp_ptr(pfps_h, pId);
-        sFM_v->emplace_back(sFM(kNoScr, kNoScrTime, Charge(kNoScrQ),
-                                Flash(kNoScrPE), Score(kNoOpHInEvt)));
-        util::CreateAssn(*this, evt, *sFM_v, pfp_ptr, *pfp_sFM_assn_v);
-      }
-      evt.put(std::move(sFM_v));
-      evt.put(std::move(pfp_sFM_assn_v));
-      return;
-    }
+  // Produce Flash metrics
+  std::vector<FlashMetrics> flashMetrics = getFlashMetricsVector(evt, sFM_v, pfps_h, pfp_sFM_assn_v);
 
-    opHits.resize(ophits_h->size());
-    copyOpHitsInFlashFindingWindow(opHits, ophits_h);
-  
-    mf::LogInfo("FlashPredict")
-      << "OpHits found: " << opHits.size() << std::endl;
-
-    const std::vector<SimpleFlash> simpleFlashes = (fSBND) ?
-      makeSimpleFlashes(opHits, opHitsRght, opHitsLeft) : makeSimpleFlashes(opHits);
-    auto is_flash_in_time = [this](const SimpleFlash& f) -> bool
-    { return (fBeamSpillTimeStart<=f.maxpeak_time &&
-              f.maxpeak_time<=fBeamSpillTimeEnd); };
-    auto flash_in_time = std::find_if(simpleFlashes.begin(), simpleFlashes.end(),
-                                      is_flash_in_time);
-
-    if(simpleFlashes.empty() ||
-       flash_in_time == simpleFlashes.end()){
-      mf::LogWarning("FlashPredict")
-        << "No SimpleFlashes in beam window [" << fBeamSpillTimeStart << ", " << fBeamSpillTimeEnd << "], "
-        << "\nor the sum of PE is less or equal to " << fMinFlashPE << " or 0."
-        << "\nSkipping...";
-      bk.nullophittime++;
-      updateBookKeeping();
-      for(size_t pId=0; pId<pfps_h->size(); pId++) {
-        if(!pfps_h->at(pId).IsPrimary()) continue;
-        const art::Ptr<recob::PFParticle> pfp_ptr(pfps_h, pId);
-        sFM_v->emplace_back(sFM(kNoScr, kNoScrTime, Charge(kNoScrQ),
-                                Flash(kNoScrPE), Score(kNoOpHInEvt)));
-        util::CreateAssn(*this, evt, *sFM_v, pfp_ptr, *pfp_sFM_assn_v);
-      }
-      evt.put(std::move(sFM_v));
-      evt.put(std::move(pfp_sFM_assn_v));
-      return;
-    } else {
-    for(auto& sf : simpleFlashes) flashMetrics.push_back(getFlashMetrics(sf));
-    }
-  }
-    else
-  {  // Get Metrics from OpFlashes
-    for(unsigned i_tpc=0;i_tpc < fOpFlashProducer.size(); i_tpc++) {
-      art::Handle<std::vector<recob::OpFlash>> opflashes_h;
-      evt.getByLabel(fOpFlashProducer[i_tpc], opflashes_h);    
-      if(opflashes_h->empty()) continue;
-      // Check that there are OpFlashes
-      art::FindManyP<recob::OpHit> OpFlashToOpHitAssns(opflashes_h, evt, fOpFlashHitProducer[i_tpc]);
-      for(unsigned opf=0;opf<opflashes_h->size();opf++) {
-        auto& opflash = (*opflashes_h)[opf];
-        mf:: LogInfo("FlashPredict")
-          << "TPC: " << i_tpc << "\n"
-          << "OpT: " << opflash.Time() << std::endl;
-        if(opflash.AbsTime()<fFlashFindingTimeStart || opflash.AbsTime()>fFlashFindingTimeEnd) continue;
-        std::vector<art::Ptr<recob::OpHit>> ophit_v = OpFlashToOpHitAssns.at(opf);      
-        flashMetrics.push_back(getFlashMetrics(opflash, ophit_v, opf));
-      }
-    }
-  }
-
-  mf::LogInfo("FlashPredict")
-    << "FlashMetrics found: " << flashMetrics.size() << std::endl;
-
-
+  // Produce charge metrics
   ChargeDigestMap chargeDigestMap = makeChargeDigest(evt, pfps_h);
 
   for(auto& chargeDigestPair : chargeDigestMap) {
@@ -990,6 +909,101 @@ FlashPredict::FlashMetrics FlashPredict::getFlashMetrics(
   }
   return fm;
 }
+
+std::vector<FlashPredict::FlashMetrics> FlashPredict::getFlashMetricsVector(
+  art::Event& evt,
+  std::unique_ptr< std::vector<sFM> >& sFM_v,
+  const art::ValidHandle<std::vector<recob::PFParticle>>& pfps_h,
+  std::unique_ptr< art::Assns <recob::PFParticle, sFM> >& pfp_sFM_assn_v)
+{
+  std::vector<SimpleFlash> simpleFlashes;
+  std::vector<recob::OpHit> opHitsRght, opHitsLeft, opHits;
+  std::vector<FlashMetrics> flashMetrics;
+  if(fIsSimple) {  // Metrics for SimpleFlashes
+    art::Handle<std::vector<recob::OpHit>> ophits_h;
+    evt.getByLabel(fOpHitProducer, ophits_h);
+    if(!ophits_h.isValid()) {
+      mf::LogError("FlashPredict")
+        << "No optical hits from producer module "
+        << fOpHitProducer;
+      bk.nonvalidophit++;
+      updateBookKeeping();
+      for(size_t pId=0; pId<pfps_h->size(); pId++) {
+        if(!pfps_h->at(pId).IsPrimary()) continue;
+        const art::Ptr<recob::PFParticle> pfp_ptr(pfps_h, pId);
+        sFM_v->emplace_back(sFM(kNoScr, kNoScrTime, Charge(kNoScrQ),
+                                Flash(kNoScrPE), Score(kNoOpHInEvt)));
+        util::CreateAssn(*this, evt, *sFM_v, pfp_ptr, *pfp_sFM_assn_v);
+      }
+      evt.put(std::move(sFM_v));
+      evt.put(std::move(pfp_sFM_assn_v));
+      return {};
+    }
+
+    opHits.resize(ophits_h->size());
+    copyOpHitsInFlashFindingWindow(opHits, ophits_h);
+  
+    mf::LogInfo("FlashPredict")
+      << "OpHits found: " << opHits.size() << std::endl;
+
+    const std::vector<SimpleFlash> simpleFlashes = (fSBND) ?
+      makeSimpleFlashes(opHits, opHitsRght, opHitsLeft) : makeSimpleFlashes(opHits);
+    auto is_flash_in_time = [this](const SimpleFlash& f) -> bool
+    { return (fBeamSpillTimeStart<=f.maxpeak_time &&
+              f.maxpeak_time<=fBeamSpillTimeEnd); };
+    auto flash_in_time = std::find_if(simpleFlashes.begin(), simpleFlashes.end(),
+                                      is_flash_in_time);
+
+    if(simpleFlashes.empty() ||
+       flash_in_time == simpleFlashes.end()){
+      mf::LogWarning("FlashPredict")
+        << "No SimpleFlashes in beam window [" << fBeamSpillTimeStart << ", " << fBeamSpillTimeEnd << "], "
+        << "\nor the sum of PE is less or equal to " << fMinFlashPE << " or 0."
+        << "\nSkipping...";
+      bk.nullophittime++;
+      updateBookKeeping();
+      for(size_t pId=0; pId<pfps_h->size(); pId++) {
+        if(!pfps_h->at(pId).IsPrimary()) continue;
+        const art::Ptr<recob::PFParticle> pfp_ptr(pfps_h, pId);
+        sFM_v->emplace_back(sFM(kNoScr, kNoScrTime, Charge(kNoScrQ),
+                                Flash(kNoScrPE), Score(kNoOpHInEvt)));
+        util::CreateAssn(*this, evt, *sFM_v, pfp_ptr, *pfp_sFM_assn_v);
+      }
+      evt.put(std::move(sFM_v));
+      evt.put(std::move(pfp_sFM_assn_v));
+      return {};
+    }
+      else
+    {
+    for(auto& sf : simpleFlashes) flashMetrics.push_back(getFlashMetrics(sf));
+    }
+  }
+    else
+  {  // Get Metrics from OpFlashes
+    for(unsigned i_tpc=0;i_tpc < fOpFlashProducer.size(); i_tpc++) {
+      art::Handle<std::vector<recob::OpFlash>> opflashes_h;
+      evt.getByLabel(fOpFlashProducer[i_tpc], opflashes_h);    
+      if(opflashes_h->empty()) continue;
+      // Check that there are OpFlashes
+      art::FindManyP<recob::OpHit> OpFlashToOpHitAssns(opflashes_h, evt, fOpFlashHitProducer[i_tpc]);
+      for(unsigned opf=0;opf<opflashes_h->size();opf++) {
+        auto& opflash = (*opflashes_h)[opf];
+        mf:: LogInfo("FlashPredict")
+          << "TPC: " << i_tpc << "\n"
+          << "OpT: " << opflash.Time() << std::endl;
+        if(opflash.AbsTime()<fFlashFindingTimeStart || opflash.AbsTime()>fFlashFindingTimeEnd) continue;
+        std::vector<art::Ptr<recob::OpHit>> ophit_v = OpFlashToOpHitAssns.at(opf);      
+        flashMetrics.push_back(getFlashMetrics(opflash, ophit_v, opf));
+      }
+    }
+  }
+
+  mf::LogInfo("FlashPredict")
+    << "FlashMetrics found: " << flashMetrics.size() << std::endl;
+
+  return flashMetrics;
+}
+
 
 FlashPredict::Score FlashPredict::computeScore(
   const ChargeMetrics& charge,

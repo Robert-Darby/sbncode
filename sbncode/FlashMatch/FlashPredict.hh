@@ -284,6 +284,11 @@ private:
     const recob::OpFlash& opflash,
     std::vector<art::Ptr<recob::OpHit>> ophit_v,
     unsigned id) const;
+  std::vector<FlashMetrics> getFlashMetricsVector(
+    art::Event& evt,
+    std::unique_ptr< std::vector<sFM> >& sFM_v,
+    const art::ValidHandle<std::vector<recob::PFParticle>>& pfps_h,
+    std::unique_ptr< art::Assns <recob::PFParticle, sFM> >& pfp_sFM_assn_v);
   Score computeScore(const ChargeMetrics& charge,
                      const FlashMetrics& flash) const;
   Score computeScore3D(const ChargeMetrics& charge,
