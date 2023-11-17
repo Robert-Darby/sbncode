@@ -370,25 +370,9 @@ void FlashPredict::produce(art::Event& evt)
     FlashMetrics flash = {};
     Score score = {std::numeric_limits<double>::max()};
     bool hits_ophits_concurrence = false;
-    for(auto& origFlash : flashMetrics) {
-      unsigned ophsInVolume = origFlash.activity;
-      if(!isConcurrent(ophsInVolume, hitsInVolume)) continue;
 
-      hits_ophits_concurrence = true;
+    std::tie(score, flash, hits_ophits_concurrence) = getMinScore(charge, flashMetrics, hitsInVolume);
 
-      Score score_tmp = (fUse3DMetrics) ? computeScore3D(charge, origFlash) :
-        computeScore(charge, origFlash);
-      if(0. <= score_tmp.total && score_tmp.total < score.total
-         && origFlash.metric_ok){
-        score = score_tmp;
-        flash = origFlash;
-        // // TODO: create charge.xb and/or charge.xb_gl
-        // if (fCorrectDriftDistance){
-        //   charge.x = driftCorrection(charge.xb, flash.time);
-        //   charge.x_gl  = xGlCorrection(charge.x_gl, charge.xb, flash.time);
-        // }
-      }
-    } // for simpleFlashes
     if(!hits_ophits_concurrence) {
       std::string extra_message = (!fForceConcurrence) ? "" :
         "\nConsider setting ForceConcurrence to false to lower requirements";
@@ -1184,6 +1168,36 @@ FlashPredict::Score FlashPredict::computeScore3D(
   return score;
 }
 
+std::tuple<FlashPredict::Score, FlashPredict::FlashMetrics, bool> FlashPredict::getMinScore(
+  const FlashPredict::ChargeMetrics& charge,
+  const std::vector<FlashPredict::FlashMetrics>& flashMetrics,
+  const unsigned hitsInVolume)
+{
+  FlashMetrics flash = {};
+  Score score = {std::numeric_limits<double>::max()};
+  bool hits_ophits_concurrence = false;
+
+  for(auto& origFlash : flashMetrics) {
+    unsigned ophsInVolume = origFlash.activity;
+    if(!isConcurrent(ophsInVolume, hitsInVolume)) continue;
+
+    hits_ophits_concurrence = true;
+
+    Score score_tmp = (fUse3DMetrics) ? computeScore3D(charge, origFlash) :
+    computeScore(charge, origFlash);
+    if(0. <= score_tmp.total && score_tmp.total < score.total
+       && origFlash.metric_ok){
+      score = score_tmp;
+      flash = origFlash;
+      // // TODO: create charge.xb and/or charge.xb_gl
+      // if (fCorrectDriftDistance){
+      //   charge.x = driftCorrection(charge.xb, flash.time);
+      //   charge.x_gl  = xGlCorrection(charge.x_gl, charge.xb, flash.time);
+      // }
+    }
+  } // for simpleFlashes
+  return {score, flash, hits_ophits_concurrence};
+}
 
 // LEGACY
 std::tuple<double, double, double, double> FlashPredict::hypoFlashX_fits(

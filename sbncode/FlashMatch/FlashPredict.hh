@@ -290,6 +290,10 @@ private:
                      const FlashMetrics& flash) const;
   Score computeScore3D(const ChargeMetrics& charge,
                        const FlashMetrics& flash) const;
+  std::tuple<Score, FlashMetrics, bool> getMinScore(
+    const ChargeMetrics& charge,
+    const std::vector<FlashMetrics>& flashMetrics,
+    const unsigned hitsInVolume);
   std::tuple<double, double, double, double> hypoFlashX_fits(// LEGACY
     double flash_rr, double flash_ratio) const;
   std::tuple<double, double, double, double> hypoFlashX_H2(
