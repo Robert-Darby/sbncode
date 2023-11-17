@@ -35,6 +35,8 @@ FlashPredict::FlashPredict(fhicl::ParameterSet const& p)
   , fUseOpCoords(p.get<bool>("UseOpCoords", true)) // Use precalculated OpFlash coordinates
   , fCorrectDriftDistance(p.get<bool>("CorrectDriftDistance", false)) // require light and charge to coincide, different requirements for SBND and ICARUS
   , fStoreMCInfo(p.get<bool>("StoreMCInfo", false))
+  , fUseScore(p.get<bool>("UseScore", true))
+  , fYZDist(p.get<bool>("YZDist", false))
     // , fUseCalo(p.get<bool>("UseCalo", false))
   , fRM(loadMetrics(p.get<std::string>("InputFileName")))
   , fNoAvailableMetrics(p.get<bool>("NoAvailableMetrics", false))
@@ -368,10 +370,11 @@ void FlashPredict::produce(art::Event& evt)
     }
 
     FlashMetrics flash = {};
-    Score score = {std::numeric_limits<double>::max()};
+    Score score = {10.};
     bool hits_ophits_concurrence = false;
 
-    std::tie(score, flash, hits_ophits_concurrence) = getMinScore(charge, flashMetrics, hitsInVolume);
+    if(fUseScore) std::tie(score, flash, hits_ophits_concurrence) = getMinScore(charge, flashMetrics, hitsInVolume);
+    else {std::tie(flash, hits_ophits_concurrence) = getMinDistance(charge, flashMetrics, hitsInVolume);}
 
     if(!hits_ophits_concurrence) {
       std::string extra_message = (!fForceConcurrence) ? "" :
@@ -404,6 +407,7 @@ void FlashPredict::produce(art::Event& evt)
         updateChargeMetrics(charge);
         updateFlashMetrics(flash);
         updateScore(score);
+        updateDistances(flash, charge);
         _flashmatch_nuslice_tree->Fill();
       }
       bk.scored_pfp++;
@@ -483,6 +487,11 @@ void FlashPredict::initTree(void)
   _flashmatch_nuslice_tree->Branch("charge_slope", &_charge_slope, "charge_slope/D");
   _flashmatch_nuslice_tree->Branch("charge_q", &_charge_q, "charge_q/D");
   _flashmatch_nuslice_tree->Branch("petoq", &_petoq, "petoq/D");
+  _flashmatch_nuslice_tree->Branch("dx", &_dx, "dx/D");
+  _flashmatch_nuslice_tree->Branch("dy", &_dy, "dy/D");
+  _flashmatch_nuslice_tree->Branch("dz", &_dz, "dz/D");
+  _flashmatch_nuslice_tree->Branch("dyz", &_dyz, "dyz/D");
+  _flashmatch_nuslice_tree->Branch("dxyz", &_dxyz, "dxyz/D");
   _flashmatch_nuslice_tree->Branch("score", &_score, "score/D");
   _flashmatch_nuslice_tree->Branch("scr_y", &_scr_y, "scr_y/D");
   _flashmatch_nuslice_tree->Branch("scr_z", &_scr_z, "scr_z/D");
@@ -1199,6 +1208,34 @@ std::tuple<FlashPredict::Score, FlashPredict::FlashMetrics, bool> FlashPredict::
   return {score, flash, hits_ophits_concurrence};
 }
 
+std::tuple<FlashPredict::FlashMetrics, bool> FlashPredict::getMinDistance(
+  const FlashPredict::ChargeMetrics& charge,
+  const std::vector<FlashPredict::FlashMetrics>& flashMetrics,
+  const unsigned hitsInVolume)
+{
+  FlashMetrics flash = {};
+  bool hits_ophits_concurrence = false;
+
+  double min_dist = std::numeric_limits<double>::max();
+  for(auto& origFlash : flashMetrics) {
+    unsigned ophsInVolume = origFlash.activity;
+    if(!isConcurrent(ophsInVolume, hitsInVolume)) continue;
+    TVector3 charge_vect(charge.x_gl, charge.y, charge.z);
+    hits_ophits_concurrence = true;
+    TVector3 flash_vect(flash.x_gl, flash.y, flash.z);
+    double dist = (charge_vect - flash_vect).Mag();
+    if(fYZDist) {
+      charge_vect.SetX(0.); flash_vect.SetX(0.);
+      dist = (charge_vect - flash_vect).Mag();
+    }
+    if(dist < min_dist) {
+      min_dist = dist;
+      flash = origFlash;
+    }
+  }
+  return {flash, hits_ophits_concurrence};
+}
+
 // LEGACY
 std::tuple<double, double, double, double> FlashPredict::hypoFlashX_fits(
   double flash_rr, double flash_ratio) const
@@ -1561,6 +1598,17 @@ void FlashPredict::updateScore(const Score& score)
     _scr_slope = score.slope, _scr_petoq = score.petoq;
 }
 
+void FlashPredict::updateDistances(
+  const FlashPredict::FlashMetrics& flash,
+  const FlashPredict::ChargeMetrics& charge)
+{
+  _dx = flash.x_gl - charge.x_gl; _dy = flash.y-charge.y; _dz = flash.z - charge.z;
+  TVector3 charge_vect(charge.x_gl, charge.y, charge.z);
+  TVector3 flash_vect(flash.x_gl, flash.y, flash.z);
+  _dxyz = (charge_vect - flash_vect).Mag();
+  charge_vect.SetX(0.); flash_vect.SetX(0.);
+  _dyz = (charge_vect - flash_vect).Mag();
+}
 
 inline
 double FlashPredict::scoreTerm(const double m, const double n,

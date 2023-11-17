@@ -294,6 +294,10 @@ private:
     const ChargeMetrics& charge,
     const std::vector<FlashMetrics>& flashMetrics,
     const unsigned hitsInVolume);
+  std::tuple<FlashMetrics, bool> getMinDistance(
+    const ChargeMetrics& charge,
+    const std::vector<FlashMetrics>& flashMetrics,
+    const unsigned hitsInVolume);
   std::tuple<double, double, double, double> hypoFlashX_fits(// LEGACY
     double flash_rr, double flash_ratio) const;
   std::tuple<double, double, double, double> hypoFlashX_H2(
@@ -311,6 +315,7 @@ private:
   void updateChargeMetrics(const ChargeMetrics& chargeMetrics);
   void updateFlashMetrics(const FlashMetrics& flashMetrics);
   void updateScore(const Score& score);
+  void updateDistances(const FlashMetrics& flash, const ChargeMetrics& charge);
   inline double scoreTerm(const double m, const double n,
                           const double mean, const double spread) const;
   inline double scoreTerm(const double m,
@@ -399,6 +404,8 @@ private:
   const bool fCorrectDriftDistance;
   // const bool fUseCalo; TODO: Use calorimetry
   const bool fStoreMCInfo;
+  const bool fUseScore;
+  const bool fYZDist;
   const ReferenceMetrics fRM;
   const bool fNoAvailableMetrics, fMakeTree;
   const double fChargeToNPhotonsShower, fChargeToNPhotonsTrack;
@@ -453,6 +460,7 @@ private:
     _hypo_x, _hypo_x_err, _hypo_x_rr, _hypo_x_ratio,
     _y_skew, _z_skew, _y_kurt, _z_kurt;
   double _petoq;
+  double _dx, _dy, _dz, _dyz, _dxyz;
   double _score, _scr_y, _scr_z, _scr_rr, _scr_ratio,
     _scr_slope, _scr_petoq;
   unsigned _evt, _run, _sub;
