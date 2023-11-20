@@ -55,6 +55,8 @@
 #include "nusimdata/SimulationBase/MCParticle.h"
 #include "nusimdata/SimulationBase/MCTruth.h"
 
+#include "sbndcode/OpDetReco/OpFlash/FlashTools/FlashGeoBase.hh"
+
 #include <algorithm>
 #include <iterator>
 #include <limits>
@@ -267,6 +269,8 @@ private:
   using Flash  = sbn::SimpleFlashMatch::Flash;
   using Score  = sbn::SimpleFlashMatch::Score;
 
+  std::unique_ptr<lightana::FlashGeoBase> _flashgeo;
+
   // Declare member data here.
   //  ::flashmatch::FlashMatchManager m_flashMatchManager; ///< The flash match manager
   // art::InputTag fFlashProducer;
@@ -409,6 +413,7 @@ private:
   const ReferenceMetrics fRM;
   const bool fNoAvailableMetrics, fMakeTree;
   const double fChargeToNPhotonsShower, fChargeToNPhotonsTrack;
+  const bool fUseGeoThreshold;
   const double fMinHitQ, fMinSpacePointQ, fMinParticleQ, fMinSliceQ;
   const std::string fOpHitTime;
   const bool fUseOpHitRiseTime, fUseOpHitPeakTime, fUseOpHitStartTime;

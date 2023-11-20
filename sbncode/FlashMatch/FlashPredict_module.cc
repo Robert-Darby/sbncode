@@ -43,6 +43,7 @@ FlashPredict::FlashPredict(fhicl::ParameterSet const& p)
   , fMakeTree(p.get<bool>("MakeTree", false))
   , fChargeToNPhotonsShower(p.get<double>("ChargeToNPhotonsShower", 1.0))  // ~40000/1600
   , fChargeToNPhotonsTrack(p.get<double>("ChargeToNPhotonsTrack", 1.0))  // ~40000/1600
+  , fUseGeoThreshold(p.get<bool>("UseGeoThreshold", false))
   , fMinHitQ(p.get<double>("MinHitQ", 0.0))
   , fMinSpacePointQ(p.get<double>("MinSpacePointQ", 0.0))
   , fMinParticleQ(p.get<double>("MinParticleQ", 0.0))
@@ -147,6 +148,9 @@ FlashPredict::FlashPredict(fhicl::ParameterSet const& p)
       << "MakeTree: " << std::boolalpha << fMakeTree << ", and StoreMCInfo: "
       <<  std::boolalpha << fStoreMCInfo << "\n"
       << "Theres no point to store MC info if not making the tree" << std::endl;
+
+  auto const flashgeo_pset = p.get<lightana::Config_t>("FlashGeoConfig");
+  _flashgeo = art::make_tool<lightana::FlashGeoBase>(flashgeo_pset);
 
   if (fMakeTree) initTree();
 
@@ -808,6 +812,7 @@ FlashPredict::FlashMetrics FlashPredict::computeFlashMetrics(
   double sum_PE2Y  = 0.; double sum_PE2Z  = 0.;
   double sum_PE2Y2 = 0.; double sum_PE2Z2 = 0.;
 
+  std::vector<double> channel_pes(312, 0);
   for(auto& oph : ophits) {
     int opChannel = oph.OpChannel();
     auto& opDet = fGeometry->OpDetGeoFromOpChannel(opChannel);
@@ -824,6 +829,7 @@ FlashPredict::FlashMetrics FlashPredict::computeFlashMetrics(
       }
     }
 
+    channel_pes[opChannel] += oph.PE();
     double ophPE  = oph.PE();
     double ophPE2 = ophPE * ophPE;
     sum       += 1.0;
@@ -902,11 +908,18 @@ FlashPredict::FlashMetrics FlashPredict::computeFlashMetrics(
     // flash.yw = fy_fac;
     // flash.zw = fz_fac;
 
-    flash.y = flash.yb - polynomialCorrection(flash.y_skew, flash.h_x,
-                                              fRM.PolCoeffsY, fSkewLimitY);
-    flash.z = flash.zb - polynomialCorrection(flash.z_skew, flash.h_x,
-                                              fRM.PolCoeffsZ, fSkewLimitZ);
-
+    if(fUseGeoThreshold) {
+      double Ycenter, Zcenter, Ywidth, Zwidth;
+      _flashgeo->GetFlashLocation(channel_pes, Ycenter, Zcenter, Ywidth, Zwidth);
+      flash.y = Ycenter; flash.z = Zcenter; flash.yw = Ywidth; flash.zw = Zwidth;
+    }
+      else
+    {
+      flash.y = flash.yb - polynomialCorrection(flash.y_skew, flash.h_x,
+                                                fRM.PolCoeffsY, fSkewLimitY);
+      flash.z = flash.zb - polynomialCorrection(flash.z_skew, flash.h_x,
+                                                fRM.PolCoeffsZ, fSkewLimitZ);
+    }
     return flash;
   }
   else {
