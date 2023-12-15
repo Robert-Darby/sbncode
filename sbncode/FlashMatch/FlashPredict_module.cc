@@ -52,6 +52,7 @@ FlashPredict::FlashPredict(fhicl::ParameterSet const& p)
   , fUseOpHitRiseTime("RiseTime" == fOpHitTime)
   , fUseOpHitPeakTime("PeakTime" == fOpHitTime)
   , fUseOpHitStartTime("StartTime" == fOpHitTime)
+  , fFindAllFlashes(p.get<bool>("FindAllFlashes", true))
   , fMinInTimeFlashes(p.get<unsigned>("MinInTimeFlashes", 1))
   , fMaxFlashes(p.get<unsigned>("MaxFlashes", fMinInTimeFlashes))
   , fMinOpHPE(p.get<double>("MinOpHPE", 0.0))
@@ -286,6 +287,7 @@ void FlashPredict::produce(art::Event& evt)
     mf::LogInfo("FlashPredict")
       << "OpHits found: " << opHits.size() << std::endl;
 
+    auto find_start = std::chrono::high_resolution_clock::now();
     const std::vector<SimpleFlash> simpleFlashes = (fSBND) ?
       makeSimpleFlashes(opHits, opHitsRght, opHitsLeft) : makeSimpleFlashes(opHits);
     auto is_flash_in_time = [this](const SimpleFlash& f) -> bool
@@ -293,6 +295,8 @@ void FlashPredict::produce(art::Event& evt)
               f.maxpeak_time<=fBeamSpillTimeEnd); };
     auto flash_in_time = std::find_if(simpleFlashes.begin(), simpleFlashes.end(),
                                       is_flash_in_time);
+    auto find_stop = std::chrono::high_resolution_clock::now();
+    _flash_find_time += std::chrono::duration<double, std::milli>(find_stop - find_start).count();
 
     if(simpleFlashes.empty() ||
        flash_in_time == simpleFlashes.end()){
@@ -313,31 +317,21 @@ void FlashPredict::produce(art::Event& evt)
       evt.put(std::move(pfp_sFM_assn_v));
       return;
     } else {
+    auto find_start = std::chrono::high_resolution_clock::now();
     for(auto& sf : simpleFlashes) flashMetrics.push_back(getFlashMetrics(sf));
+    auto find_stop = std::chrono::high_resolution_clock::now();
+    _flash_mets_compute_time += std::chrono::duration<double, std::milli>(find_stop - find_start).count();
     }
   }
     else
   {  // Get Metrics from OpFlashes
-    for(unsigned i_tpc=0;i_tpc < fOpFlashProducer.size(); i_tpc++) {
-      art::Handle<std::vector<recob::OpFlash>> opflashes_h;
-      evt.getByLabel(fOpFlashProducer[i_tpc], opflashes_h);    
-      if(opflashes_h->empty()) continue;
-      mf::LogInfo("FlashPredict")
-        << "OpFlashes: " << opflashes_h->size() << std::endl;
-      // Check that there are OpFlashes
-      art::FindManyP<recob::OpHit> OpFlashToOpHitAssns(opflashes_h, evt, fOpFlashHitProducer[i_tpc]);
-      for(unsigned opf=0;opf<opflashes_h->size();opf++) {
-        auto& opflash = (*opflashes_h)[opf];
-        double optime = -9999.;
-        if(fSBND) optime = opflash.AbsTime();
-        else if(fICARUS) optime = opflash.Time();
-        if(optime<fFlashFindingTimeStart || optime>fFlashFindingTimeEnd) continue;
-        std::vector<art::Ptr<recob::OpHit>> ophit_v = OpFlashToOpHitAssns.at(opf);      
-        flashMetrics.push_back(getFlashMetrics(opflash, ophit_v, opf));
-      }
-    }
+    auto find_start = std::chrono::high_resolution_clock::now();
+    flashMetrics = findOpFlashes(evt);
+    auto find_stop = std::chrono::high_resolution_clock::now();
+    _flash_mets_compute_time += std::chrono::duration<double, std::milli>(find_stop - find_start).count();
   }
 
+  _flashes = flashMetrics.size();
   mf::LogInfo("FlashPredict")
     << "FlashMetrics found: " << flashMetrics.size() << std::endl;
 
@@ -345,6 +339,7 @@ void FlashPredict::produce(art::Event& evt)
   ChargeDigestMap chargeDigestMap = makeChargeDigest(evt, pfps_h);
 
   for(auto& chargeDigestPair : chargeDigestMap) {
+    auto find_start = std::chrono::high_resolution_clock::now();
     const auto& chargeDigest = chargeDigestPair.second;
     const auto& pfp_ptr = chargeDigest.pfp_ptr;
     const unsigned hitsInVolume = chargeDigest.hitsInVolume;
@@ -380,6 +375,8 @@ void FlashPredict::produce(art::Event& evt)
     if(fUseScore) std::tie(score, flash, hits_ophits_concurrence) = getMinScore(charge, flashMetrics, hitsInVolume);
     else {std::tie(flash, hits_ophits_concurrence) = getMinDistance(charge, flashMetrics, hitsInVolume);}
 
+    auto find_stop = std::chrono::high_resolution_clock::now();
+    _match_compute_time += std::chrono::duration<double, std::milli>(find_stop - find_start).count();
     if(!hits_ophits_concurrence) {
       std::string extra_message = (!fForceConcurrence) ? "" :
         "\nConsider setting ForceConcurrence to false to lower requirements";
@@ -435,8 +432,11 @@ void FlashPredict::produce(art::Event& evt)
         << "score.petoq: " << score.petoq << "\n";
       printMetrics("ERROR", charge, flash, 0, mf::LogError("FlashPredict"));
     }
-
   } // chargeDigestMap: PFparticles that pass criteria
+  mf::LogInfo("FlashPredict")
+    << "Flash Finding Time: " << _flash_find_time << "\n"
+    << "Metric Production: " << _flash_mets_compute_time << "\n"
+    << "Matching Time: " << _match_compute_time << std::endl;
   bk.events_processed++;
   updateBookKeeping();
 
@@ -454,6 +454,7 @@ void FlashPredict::initTree(void)
   _flashmatch_nuslice_tree->Branch("run", &_run, "run/I");
   _flashmatch_nuslice_tree->Branch("sub", &_sub, "sub/I");
   _flashmatch_nuslice_tree->Branch("slices", &_slices, "slices/I");
+  _flashmatch_nuslice_tree->Branch("flashes", &_flashes, "flashes/I");
   _flashmatch_nuslice_tree->Branch("flash_id", &_flash_id, "flash_id/I");
   _flashmatch_nuslice_tree->Branch("flash_activity", &_flash_activity, "flash_activity/I");
   _flashmatch_nuslice_tree->Branch("flash_x", &_flash_x, "flash_x/D");
@@ -505,6 +506,9 @@ void FlashPredict::initTree(void)
   _flashmatch_nuslice_tree->Branch("scr_petoq", &_scr_petoq, "scr_petoq/D");
   _flashmatch_nuslice_tree->Branch("is_nu", &_is_nu, "is_nu/I");
   _flashmatch_nuslice_tree->Branch("mcT0", &_mcT0, "mcT0/D");
+  _flashmatch_nuslice_tree->Branch("flash_find_time", &_flash_find_time, "flash_find_time/D");
+  _flashmatch_nuslice_tree->Branch("flash_mets_compute_time", &_flash_mets_compute_time, "flash_mets_compute_time/D");
+  _flashmatch_nuslice_tree->Branch("match_compute_time", &_match_compute_time, "match_compute_time/D");
 }
 
 
@@ -855,7 +859,7 @@ FlashPredict::FlashMetrics FlashPredict::computeFlashMetrics(
     }
   } // for opHits
 
-  if (sum_PE > 0.) {
+  if (sum_PE >= 0.) {
     FlashMetrics flash;
     flash.metric_ok = true;
     flash.pe    = sum_PE;
@@ -1005,6 +1009,50 @@ FlashPredict::FlashMetrics FlashPredict::getFlashMetrics(
     fm.zw = opflash.ZWidth();
   }
   return fm;
+}
+
+std::vector<FlashPredict::FlashMetrics> FlashPredict::findOpFlashes(
+  const art::Event& evt)
+{
+  // Find all OpFlashes in search window and select ones within beam window
+  std::vector<FlashPredict::FlashMetrics> flashMetrics;
+  std::map<double, FlashPredict::FlashMetrics> cosmic_flashes;
+  for(unsigned i_tpc=0;i_tpc < fOpFlashProducer.size(); i_tpc++) {
+    art::Handle<std::vector<recob::OpFlash>> opflashes_h;
+    evt.getByLabel(fOpFlashProducer[i_tpc], opflashes_h);    
+    if(opflashes_h->empty()) continue;
+    mf::LogInfo("FlashPredict")
+      << "OpFlashes: " << opflashes_h->size() << std::endl;
+    // Check that there are OpFlashes
+    art::FindManyP<recob::OpHit> OpFlashToOpHitAssns(opflashes_h, evt, fOpFlashHitProducer[i_tpc]);
+    for(unsigned opf=0;opf<opflashes_h->size();opf++) {
+      auto& opflash = (*opflashes_h)[opf];
+      double optime = -9999.;
+      if(fSBND) optime = opflash.AbsTime();
+      else if(fICARUS) optime = opflash.Time();
+      if(optime<fFlashFindingTimeStart || optime>fFlashFindingTimeEnd) continue;
+      std::vector<art::Ptr<recob::OpHit>> ophit_v = OpFlashToOpHitAssns.at(opf);      
+      double pe_peak = -1.*(*max_element(opflash.PEs().begin(), opflash.PEs().end()));
+      FlashMetrics flash = getFlashMetrics(opflash, ophit_v, opf);
+      if(optime > fBeamSpillTimeStart && optime < fBeamSpillTimeEnd)
+        flashMetrics.push_back(flash);
+      else cosmic_flashes.insert(std::pair(pe_peak, flash));
+    }
+  }
+  // Sort by maximum PE peak size
+//  std::sort(cosmic_flashes.begin(), cosmic_flashes.end(),
+//            [this] (const recob::OpFlash& opf1, const recob::OpFlash& opf2)
+//              { return (*max_element(opf2.PEs().begin(), opf2.PEs().end()) <
+//                        *max_element(opf1.PEs().begin(), opf1.PEs().end())); });
+
+  // Get metrics for specified number of OpFlashes
+  unsigned max_flashes = fMaxFlashes;
+  if(fMaxFlashes > flashMetrics.size() + cosmic_flashes.size() || fFindAllFlashes)
+    max_flashes = flashMetrics.size() + cosmic_flashes.size();
+  for(unsigned i = flashMetrics.size(); i <= max_flashes; i++) {
+    flashMetrics.push_back(cosmic_flashes[i]);
+  }
+  return flashMetrics;
 }
 
 bool FlashPredict::isConcurrent(
@@ -1233,9 +1281,9 @@ std::tuple<FlashPredict::FlashMetrics, bool> FlashPredict::getMinDistance(
   for(auto& origFlash : flashMetrics) {
     unsigned ophsInVolume = origFlash.activity;
     if(!isConcurrent(ophsInVolume, hitsInVolume)) continue;
-    TVector3 charge_vect(charge.x_gl, charge.y, charge.z);
     hits_ophits_concurrence = true;
-    TVector3 flash_vect(flash.x_gl, flash.y, flash.z);
+    TVector3 charge_vect(charge.x_gl, charge.y, charge.z);
+    TVector3 flash_vect(origFlash.x_gl, origFlash.y, origFlash.z);
     double dist = (charge_vect - flash_vect).Mag();
     if(fYZDist) {
       charge_vect.SetX(0.); flash_vect.SetX(0.);
@@ -1245,7 +1293,7 @@ std::tuple<FlashPredict::FlashMetrics, bool> FlashPredict::getMinDistance(
       min_dist = dist;
       flash = origFlash;
     }
-  }
+  } // looop over FlashMetrics
   return {flash, hits_ophits_concurrence};
 }
 
@@ -1835,7 +1883,10 @@ bool FlashPredict::findSimpleFlashes(
   std::unique_ptr<TH1D>& opHitsTimeHist) const
 {
   OpHitIt opH_beg = opHits.begin();
-  for(unsigned flashId=0; flashId<fMaxFlashes; ++flashId){
+  unsigned max_flashes = fMaxFlashes;
+  if(fFindAllFlashes) max_flashes = unsigned((fFlashFindingTimeEnd - fFlashFindingTimeStart) /
+                                             (fFlashEnd - fFlashStart));
+  for(unsigned flashId=0; flashId < max_flashes; ++flashId){
     double maxpeak_time = std::numeric_limits<double>::min();
     if (flashId < fMinInTimeFlashes) { // First flashes have to be within the beam spill
       int beam_start_bin = opHitsTimeHist->FindBin(fBeamSpillTimeStart);
@@ -1854,7 +1905,7 @@ bool FlashPredict::findSimpleFlashes(
     int lowedge_bin = opHitsTimeHist->FindBin(lowedge);
     int highedge_bin = opHitsTimeHist->FindBin(highedge);
     double ophits_integral = opHitsTimeHist->Integral(lowedge_bin, highedge_bin);
-    mf::LogDebug("FlashPredict")
+    mf::LogInfo("FlashPredict")
       << "Finding Simple Flashes, "
       << "flashId: " << flashId << ",    "
       << "ophsInVolume: " << ophsInVolume << ",    "
@@ -1878,6 +1929,9 @@ bool FlashPredict::findSimpleFlashes(
     // the iterators point to the boundaries of the partition
     OpHitIt opH_end = std::partition(opH_beg, opHits.end(),
                                      peakInsideEdges);
+    mf::LogInfo("FlashPredict")
+      << "Found SimpleFlash with " << std::distance(opH_beg, opH_end) << " OpHits" << std::endl;
+    if(std::distance(opH_beg, opH_end) == 0) break;
     simpleFlashes.emplace_back
       (SimpleFlash(flashId, ophsInVolume,
                    opH_beg, opH_end, maxpeak_time));

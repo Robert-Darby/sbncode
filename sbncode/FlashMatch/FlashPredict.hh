@@ -65,6 +65,7 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <chrono>
 
 class FlashPredict;
 class FlashPredict : public art::EDProducer {
@@ -288,6 +289,7 @@ private:
     const recob::OpFlash& opflash,
     std::vector<art::Ptr<recob::OpHit>> ophit_v,
     unsigned id) const;
+  std::vector<FlashMetrics> findOpFlashes(const art::Event& evt);
   bool isConcurrent(unsigned ophsInVolume,
                       unsigned hitsInVolume) const;
   Score computeScore(const ChargeMetrics& charge,
@@ -417,6 +419,7 @@ private:
   const double fMinHitQ, fMinSpacePointQ, fMinParticleQ, fMinSliceQ;
   const std::string fOpHitTime;
   const bool fUseOpHitRiseTime, fUseOpHitPeakTime, fUseOpHitStartTime;
+  const bool fFindAllFlashes;
   const unsigned fMinInTimeFlashes, fMaxFlashes;
   const double fMinOpHPE, fMinFlashPE, fFlashPEFraction;
   const art::ServiceHandle<geo::Geometry> fGeometry;
@@ -470,7 +473,11 @@ private:
     _scr_slope, _scr_petoq;
   unsigned _evt, _run, _sub;
   unsigned _slices = -1; unsigned _is_nu = -1;
+  unsigned _flashes = -1;
   double _mcT0 = -9999.;
+  double _flash_find_time = 0.;
+  double _flash_mets_compute_time = 0.;
+  double _match_compute_time = 0.;
 
   static constexpr unsigned kMinEntriesInProjection = 100;
   const std::array<std::string, 3> kSuffixes{"l", "h", "m"};// low, high, medium
