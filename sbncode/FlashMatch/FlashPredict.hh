@@ -289,6 +289,9 @@ private:
     const recob::OpFlash& opflash,
     std::vector<art::Ptr<recob::OpHit>> ophit_v,
     unsigned id) const;
+  double opFlashMaxPeak(
+    const std::vector<art::Ptr<recob::OpHit>>& ophit_v,
+    const double tickPeriod) const;
   std::vector<FlashMetrics> findOpFlashes(const art::Event& evt);
   bool isConcurrent(unsigned ophsInVolume,
                       unsigned hitsInVolume) const;
@@ -406,6 +409,7 @@ private:
   const bool fSelectNeutrino;
   const bool fForceConcurrence;
   const bool fUse3DMetrics;
+  const bool fSortOpFlashIntegral;
   const bool fUseOpCoords;
   const bool fCorrectDriftDistance;
   // const bool fUseCalo; TODO: Use calorimetry

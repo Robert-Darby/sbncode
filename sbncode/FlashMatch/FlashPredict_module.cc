@@ -32,6 +32,7 @@ FlashPredict::FlashPredict(fhicl::ParameterSet const& p)
   , fSelectNeutrino(p.get<bool>("SelectNeutrino", true)) // only attempt to match potential neutrino slices
   , fForceConcurrence(p.get<bool>("ForceConcurrence", false)) // require light and charge to coincide, different requirements for SBND and ICARUS
   , fUse3DMetrics(p.get<bool>("Use3DMetrics", false)) // use metrics that depend on (X,Y,Z)
+  , fSortOpFlashIntegral(p.get<bool>("SortOpFlashIntegral", false))
   , fUseOpCoords(p.get<bool>("UseOpCoords", true)) // Use precalculated OpFlash coordinates
   , fCorrectDriftDistance(p.get<bool>("CorrectDriftDistance", false)) // require light and charge to coincide, different requirements for SBND and ICARUS
   , fStoreMCInfo(p.get<bool>("StoreMCInfo", false))
@@ -1011,9 +1012,36 @@ FlashPredict::FlashMetrics FlashPredict::getFlashMetrics(
   return fm;
 }
 
+double FlashPredict::opFlashMaxPeak(
+  const std::vector<art::Ptr<recob::OpHit>>& ophit_v,
+  const double tickPeriod) const
+{
+  std::vector<recob::OpHit> ophits;
+  for(unsigned i=0; i< ophit_v.size(); i++) {
+    ophits.emplace_back(*(ophit_v)[i]);
+  }
+  std::sort(ophits.begin(), ophits.end(),
+            [this] (const recob::OpHit& oph1, const recob::OpHit& oph2)
+              { return (opHitTime(oph1) < opHitTime(oph2)); });
+
+  double flash_start = opHitTime(ophits[0]);
+  double flash_stop = opHitTime(ophits[ophits.size()-1]);
+  unsigned n_bins = unsigned((flash_stop - flash_start) / tickPeriod);
+  std::unique_ptr<TH1D> opHitsTimeHist = std::make_unique<TH1D>(
+    "opHitsTimeHist", "ophittime", n_bins, flash_start, flash_stop);
+  opHitsTimeHist->SetOption("HIST");
+  opHitsTimeHist->SetDirectory(0);//turn off ROOT's object ownership
+  for(const auto& oph : ophits) {
+    opHitsTimeHist->Fill(opHitTime(oph), oph.PE());
+  }
+  return opHitsTimeHist->GetMaximum();
+}
+
 std::vector<FlashPredict::FlashMetrics> FlashPredict::findOpFlashes(
   const art::Event& evt)
 {
+  auto clockData = art::ServiceHandle<detinfo::DetectorClocksService const>()->DataForJob();
+  const double tickPeriod = clockData.OpticalClock().TickPeriod();
   // Find all OpFlashes in search window and select ones within beam window
   std::vector<FlashPredict::FlashMetrics> flashMetrics;
   std::map<double, FlashPredict::FlashMetrics> cosmic_flashes;
@@ -1032,24 +1060,20 @@ std::vector<FlashPredict::FlashMetrics> FlashPredict::findOpFlashes(
       else if(fICARUS) optime = opflash.Time();
       if(optime<fFlashFindingTimeStart || optime>fFlashFindingTimeEnd) continue;
       std::vector<art::Ptr<recob::OpHit>> ophit_v = OpFlashToOpHitAssns.at(opf);      
-      double pe_peak = -1.*(*max_element(opflash.PEs().begin(), opflash.PEs().end()));
+      double pe_peak = (fSortOpFlashIntegral) ? -1.*(*max_element(opflash.PEs().begin(), opflash.PEs().end())) :
+                                                -1.*(opFlashMaxPeak(ophit_v, tickPeriod));
       FlashMetrics flash = getFlashMetrics(opflash, ophit_v, opf);
       if(optime > fBeamSpillTimeStart && optime < fBeamSpillTimeEnd)
         flashMetrics.push_back(flash);
       else cosmic_flashes.insert(std::pair(pe_peak, flash));
     }
   }
-  // Sort by maximum PE peak size
-//  std::sort(cosmic_flashes.begin(), cosmic_flashes.end(),
-//            [this] (const recob::OpFlash& opf1, const recob::OpFlash& opf2)
-//              { return (*max_element(opf2.PEs().begin(), opf2.PEs().end()) <
-//                        *max_element(opf1.PEs().begin(), opf1.PEs().end())); });
 
   // Get metrics for specified number of OpFlashes
   unsigned max_flashes = fMaxFlashes;
   if(fMaxFlashes > flashMetrics.size() + cosmic_flashes.size() || fFindAllFlashes)
-    max_flashes = flashMetrics.size() + cosmic_flashes.size();
-  for(unsigned i = flashMetrics.size(); i <= max_flashes; i++) {
+    max_flashes = cosmic_flashes.size();
+  for(unsigned i = 0; i < max_flashes; i++) {
     flashMetrics.push_back(cosmic_flashes[i]);
   }
   return flashMetrics;
