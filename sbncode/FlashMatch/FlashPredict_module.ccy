@@ -7,6 +7,7 @@
 //
 ////////////////////////////////////////////////////////////////////////
 #include "sbncode/FlashMatch/FlashPredict.hh"
+#include <boost/filesystem.hpp>
 
 FlashPredict::FlashPredict(fhicl::ParameterSet const& p)
   : EDProducer{p}
@@ -523,18 +524,23 @@ FlashPredict::ReferenceMetrics FlashPredict::loadMetrics(
   const std::string inputFilename,
   const std::string inputSearchPath) const
 {
-  const char* condor_path;
-  if (const char* env_p = std::getenv(inputSearchPath.c_str())) {
-      condor_path = env_p;
+  if (const char* env_p = std::getenv(inputSearchPath.c_str()))
       std::cout << "Your " << inputSearchPath << "is: " << env_p << '\n';
-      std::cout << condor_path << std::endl;
-  }
 
   if (const char* env_t = std::getenv("TRANSFERRED_INPUT_FILES"))
       std::cout << "Your  TRANSFERRED_INPUT_PATH is: " << env_t << '\n';
 
-   for (auto const& dir_entry : std::filesystem::recursive_directory_iterator(condor_path))
-        std::cout << dir_entry << '\n';
+  struct path_leaf_string
+  {
+      std::string operator()(const boost::filesystem::directory_entry& entry) const
+      {
+          return entry.path().leaf().string();
+      }
+  };
+ 
+  std::vector<std::string> condor_vec;
+  read_directory(inputSearchPath, condor_vec);
+  for(auto& dir : condor_vec) std:: cout << dir << std::endl;
 
   // Many changes needed everywhere
   ReferenceMetrics rm;

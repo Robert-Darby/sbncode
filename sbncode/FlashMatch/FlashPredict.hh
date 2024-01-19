@@ -1,6 +1,10 @@
 #ifndef SBN_FLASHMATCH_FLASHPREDICT_HH
 #define SBN_FLASHMATCH_FLASHPREDICT_HH
 
+#include <boost/filesystem.hpp>
+#include <iostream>
+#include <filesystem>
+
 #include "art/Framework/Core/EDProducer.h"
 #include "art/Framework/Core/ModuleMacros.h"
 #include "art/Framework/Principal/Event.h"
@@ -87,6 +91,14 @@ public:
   void endJob() override;
 
   // Variables loaded from the metrics file
+  struct path_leaf_string
+  {
+      const std::string operator()(const boost::filesystem::directory_entry& entry) const
+      {
+          return entry.path().leaf().string();
+      }
+  };
+
   struct ReferenceMetrics {
     std::vector<double> dYMeans, dZMeans, RRMeans, RatioMeans,
       SlopeMeans, PEToQMeans;
@@ -276,7 +288,9 @@ private:
   //  ::flashmatch::FlashMatchManager m_flashMatchManager; ///< The flash match manager
   // art::InputTag fFlashProducer;
   void initTree(void);
-  ReferenceMetrics loadMetrics(const std::string inputFilename) const;
+  void read_directory(const std::string& name, std::vector<std::string>& v);
+  ReferenceMetrics loadMetrics(const std::string inputFilename,
+                               const std::string inputSearchPath) const;
   std::tuple<double, bool> cheatMCT0_IsNu(
     const std::vector<art::Ptr<recob::Hit>>& hits,
     const std::vector<art::Ptr<simb::MCParticle>>& mcParticles) const;
