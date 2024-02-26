@@ -524,19 +524,6 @@ FlashPredict::ReferenceMetrics FlashPredict::loadMetrics(
   const std::string inputFilename,
   const std::string inputSearchPath) const
 {
-  const char* condor_path;
-  if (const char* env_p = std::getenv(inputSearchPath.c_str())) {
-      condor_path = env_p;
-      std::cout << "Your " << inputSearchPath << "is: " << env_p << '\n';
-      std::cout << condor_path << std::endl;
-  }
-
-  if (const char* env_t = std::getenv("TRANSFERRED_INPUT_FILES"))
-      std::cout << "Your  TRANSFERRED_INPUT_PATH is: " << env_t << '\n';
-
-   for (auto const& dir_entry : std::filesystem::recursive_directory_iterator(condor_path))
-        std::cout << dir_entry << '\n';
-
   // Many changes needed everywhere
   ReferenceMetrics rm;
   // read histograms and fill vectors for match score calculation
