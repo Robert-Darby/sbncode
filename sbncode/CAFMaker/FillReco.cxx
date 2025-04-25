@@ -126,10 +126,10 @@ namespace caf
   {
     srspacepoint.position = SRVector3D(spacepoint.X(), spacepoint.Y(), spacepoint.Z());
     srspacepoint.position_err = SRVector3D(spacepoint.XErr(), spacepoint.YErr(), spacepoint.ZErr());
-    srspacepoint.pe = spacepoint.PE();
-    srspacepoint.time = spacepoint.Ts1();
-    srspacepoint.time_err = spacepoint.Ts1Err();
-    srspacepoint.complete = spacepoint.Complete();
+    srspacepoint.pe           = spacepoint.PE();
+    srspacepoint.time         = spacepoint.Ts0();
+    srspacepoint.time_err     = spacepoint.Ts0Err();
+    srspacepoint.complete     = spacepoint.Complete();
   }
 
   void FillSBNDCRTTrack(const sbnd::crt::CRTTrack &track,
@@ -139,10 +139,10 @@ namespace caf
     for (auto const &point : track.Points())
       srsbndcrttrack.points.emplace_back(point.X(), point.Y(), point.Z());
 
-    srsbndcrttrack.time = track.Ts1();
-    srsbndcrttrack.time_err = track.Ts1Err();
-    srsbndcrttrack.pe = track.PE();
-    srsbndcrttrack.tof = track.ToF();
+    srsbndcrttrack.time     = track.Ts0();
+    srsbndcrttrack.time_err = track.Ts0Err();
+    srsbndcrttrack.pe       = track.PE();
+    srsbndcrttrack.tof      = track.ToF();
   }
 
   void FillCRTPMTMatch(const sbn::crt::CRTPMTMatching &match,
