@@ -17,6 +17,7 @@
 #include "lardataobj/RecoBase/Vertex.h"
 #include "lardataobj/RecoBase/Hit.h"
 #include "lardataobj/RecoBase/SpacePoint.h"
+#include "sbnobj/SBND/Trigger/MichelTag.hh"
 #include "lardataobj/RecoBase/OpFlash.h"
 #include "lardataobj/RecoBase/OpHit.h"
 #include "lardataobj/AnalysisBase/Calorimetry.h"
@@ -222,6 +223,9 @@ namespace caf
                   int cryo,
                   caf::SROpFlash &srflash,
                   bool allowEmpty = false);
+  void FillMichelTag(const sbnd::MichelTag &tag,
+                     caf::SRMichelTag &srmichel,
+                     bool allowEmpty = false);
   void FillCRTPMTMatch(const sbn::crt::CRTPMTMatching &match,
 		       caf::SRCRTPMTMatch &srmatch,
 		       bool allowEmpty = false);
