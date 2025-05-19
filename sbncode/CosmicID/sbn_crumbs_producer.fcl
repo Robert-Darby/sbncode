@@ -12,7 +12,7 @@ crumbs_sbnd:
   HitModuleLabel:			"gaushit"
   TrackModuleLabel:			"pandoraTrack"
   SliceModuleLabel:			"pandora"
-  FlashMatchModuleLabel:		"fmatch"
+  FlashMatchModuleLabel:		"fmatchop"
   CRTTrackMatchModuleLabel:		"crttrackmatching"
   CRTSPMatchModuleLabel:		"crtspacepointmatching"
   CalorimetryModuleLabel:		"pandoraCalo"

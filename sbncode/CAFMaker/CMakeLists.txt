@@ -33,6 +33,7 @@ art_make_library( LIBRARY_NAME sbncode_CAFMaker
                   nusimdata::SimulationBase
                   larsim::MCCheater_ParticleInventoryService_service
                   sbnobj::Common_CRT
+                  sbnobj_SBND_Trigger
                   sbnobj::Common_Reco
                   sbnobj::Common_Analysis
                   sbnobj::SBND_CRT
