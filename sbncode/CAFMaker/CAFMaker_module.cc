@@ -95,11 +95,15 @@
 #include "lardataobj/RecoBase/Shower.h"
 #include "lardataobj/RecoBase/MCSFitResult.h"
 #include "sbnobj/SBND/Trigger/MichelTag.hh"
+#include "lardataobj/RecoBase/Cluster.h"
+#include "lardataobj/AnalysisBase/MVAOutput.h"
+
 #include "nusimdata/SimulationBase/MCFlux.h"
 #include "nusimdata/SimulationBase/MCTruth.h"
 #include "nusimdata/SimulationBase/MCNeutrino.h"
 #include "nusimdata/SimulationBase/GTruth.h"
 
+#include "sbnobj/Common/CRT/CRTHitT0TaggingInfo.hh"
 #include "sbnobj/Common/EventGen/MeVPrtl/MeVPrtlTruth.h"
 #include "sbnobj/Common/Reco/RangeP.h"
 #include "sbnobj/Common/SBNEventWeight/EventWeightMap.h"
@@ -165,12 +169,276 @@ namespace sbn
 namespace caf
 {
 
-  /// Function to calculate a timestamp from the spill info product
-  template <typename SpillInfo>
-  double spillInfoToTimestamp(SpillInfo const &info)
+/// Function to calculate a timestamp from the spill info product
+template <typename SpillInfo>
+double spillInfoToTimestamp(SpillInfo const& info) {
+  return static_cast<double>(info.spill_time_s) +
+         static_cast<double>(info.spill_time_ns)*1.0e-9;
+}
+
+/// Module to create Common Analysis Files from ART files
+class CAFMaker : public art::EDProducer {
+ public:
+  // Allows 'nova --print-description' to work
+  using Parameters = art::EDProducer::Table<CAFMakerParams>;
+
+  explicit CAFMaker(const Parameters& params);
+  virtual ~CAFMaker();
+
+  void produce(art::Event& evt) noexcept;
+
+  void respondToOpenInputFile(const art::FileBlock& fb);
+
+  void beginJob();
+  void endJob();
+  virtual void beginRun(art::Run& r);
+  virtual void beginSubRun(art::SubRun& sr);
+  virtual void endSubRun(art::SubRun& sr);
+
+ protected:
+  CAFMakerParams fParams;
+
+  std::string fCafFilename;
+  std::string fCafBlindFilename;
+  std::string fCafPrescaleFilename;
+
+  std::string fFlatCafFilename;
+  std::string fFlatCafBlindFilename;
+  std::string fFlatCafPrescaleFilename;
+
+  std::string fSourceFile;
+  std::uint32_t fSourceFileHash;
+ 
+  bool fOverrideRealData;
+  bool fFirstInSubRun;
+  unsigned int fIndexInFile = SRHeader::NoSourceIndex;
+  bool fFirstBlindInSubRun;
+  bool fFirstPrescaleInSubRun;
+  bool fFirstBlindInFile;
+  bool fFirstPrescaleInFile;
+  int fFileNumber;
+  double fTotalPOT;
+  double fSubRunPOT;
+  double fOffbeamBNBGates;
+  double fOffbeamNuMIGates;
+  double fTotalSinglePOT;
+  double fTotalEvents;
+  double fBlindEvents;
+  double fPrescaleEvents;
+  std::vector<caf::SRBNBInfo> fBNBInfo; ///< Store detailed BNB info to save into the first StandardRecord of the output file
+  std::vector<caf::SRNuMIInfo> fNuMIInfo; ///< Store detailed NuMI info to save into the first StandardRecord of the output file
+  std::map<unsigned int,sbn::BNBSpillInfo> fBNBInfoEventMap; ///< Store detailed BNB info to save for the particular spills of events
+  std::map<unsigned int,sbn::NuMISpillInfo> fNuMIInfoEventMap; ///< Store detailed NuMI info to save for the particular spills of events
+  bool fHasBNBInfo;
+  bool fHasNuMIInfo;
+
+  // int fCycle;
+  // int fBatch;
+
+  TFile* fFile = 0;
+  TFile* fFileb = 0;
+  TFile* fFilep = 0;
+
+  TTree* fRecTree = 0;
+  TTree* fRecTreeb = 0;
+  TTree* fRecTreep = 0;
+
+  TFile* fFlatFile = 0;
+  TFile* fFlatFileb = 0;
+  TFile* fFlatFilep = 0;
+
+  TTree* fFlatTree = 0;
+  TTree* fFlatTreeb = 0;
+  TTree* fFlatTreep = 0;
+
+  // GENIE EventRecord
+  genie::NtpMCEventRecord * fGenieEvtRec = 0;
+  TTree                   * fGenieTree = 0;
+  genie::NtpMCEventRecord * fFlatGenieEvtRec = 0;
+  TTree                   * fFlatGenieTree = 0;
+  bool fSaveGENIEEventRecord;
+  unsigned int fGenieEventCounter;
+
+  //TBits      * fGenieEvtRec_brEvtFlags  = 0; ////< Generator-specific event flags
+  //TObjString * fGenieEvtRec_brEvtCode   = 0; ////< Generator-specific string with 'event code'
+  int          fGenieEvtRec_brEvtNum    = 0; ////< Event number
+  double       fGenieEvtRec_brEvtXSec   = 0.0; ////< Cross section for selected event (1e-38 cm2)
+  double       fGenieEvtRec_brEvtDXSec  = 0.0; ////< Cross section for selected event kinematics (1e-38 cm2 / {K^n})
+  unsigned int fGenieEvtRec_brEvtKPS    = 0; ////< Kinematic phase space variables. See $GENIE/src/Framework/Conventions/KinePhaseSpace.h -> KinePhaseSpace_t
+  double       fGenieEvtRec_brEvtWght   = 0.0; ////< Weight for that event
+  double       fGenieEvtRec_brEvtProb   = 0.0; ////< Probability for that event (given cross section, path lengths, etc)
+  double       fGenieEvtRec_brEvtVtx[4] = {0.0}; ////< Event vertex position in detector coord syst (SI)
+  int          fGenieEvtRec_brStdHepN   = 0; ////< Number of particles in particle array
+  int          fGenieEvtRec_brStdHepPdg   [250] = {0}; ////< Pdg codes (& generator specific codes for pseudoparticles)
+  int          fGenieEvtRec_brStdHepStatus[250] = {0}; ////< Generator-specific status code
+  int          fGenieEvtRec_brStdHepRescat[250] = {0}; ////< Hadron transport model-specific rescattering code
+  double       fGenieEvtRec_brStdHepX4    [250][4] = {{0.0}}; ////< 4-x (x, y, z, t) of particle in hit nucleus frame (fm)
+  double       fGenieEvtRec_brStdHepP4    [250][4] = {{0.0}}; ////< 4-p (px,py,pz,E) of particle in LAB frame (GeV)
+  double       fGenieEvtRec_brStdHepPolz  [250][3] = {{0.0}}; ////< Polarization vector
+  int          fGenieEvtRec_brStdHepFd    [250] = {0}; ////< First daughter
+  int          fGenieEvtRec_brStdHepLd    [250] = {0}; ////< Last  daughter
+  int          fGenieEvtRec_brStdHepFm    [250] = {0}; ////< First mother
+  int          fGenieEvtRec_brStdHepLm    [250] = {0}; ////< Last  mother
+
+  flat::Flat<caf::StandardRecord>* fFlatRecord = 0;
+  flat::Flat<caf::StandardRecord>* fFlatRecordb = 0;
+  flat::Flat<caf::StandardRecord>* fFlatRecordp = 0;
+
+  Det_t fDet;  ///< Detector ID in caf namespace typedef
+
+  // volumes
+  std::vector<std::vector<geo::BoxBoundedGeo>> fTPCVolumes;
+  std::vector<geo::BoxBoundedGeo> fActiveVolumes;
+
+  // random number generator for fake reco
+  CLHEP::HepRandomEngine& fFakeRecoRandomEngine;
+
+  // random number generator for prescaling
+  CLHEP::HepRandomEngine& fBlindRandomEngine;
+
+  /// What position in the vector each parameter set take
+  std::map<std::string, unsigned int> fWeightPSetIndex;
+  /// Map from parameter labels to previously seen parameter set configuration
+  std::map<std::string, std::vector<sbn::evwgh::EventWeightParameterSet>> fPrevWeightPSet;
+
+  std::string DeriveFilename(const std::string& inname,
+                             const std::string& ext) const;
+
+  static std::string Basename(const std::string& path);
+
+  void AddEnvToFile(TFile* f);
+  void AddMetadataToFile(TFile* f,
+                         const std::map<std::string, std::string>& metadata);
+  void AddGlobalTreeToFile(TFile* outfile, caf::SRGlobal& global) const;
+  void AddHistogramsToFile(TFile* outfile,bool isBlindPOT, bool isPrescalePOT) const;
+
+  void InitializeOutfiles();
+
+  void BlindEnergyParameters(StandardRecord* brec);
+  double GetBlindPOTScale() const;
+
+  void InitVolumes(); ///< Initialize volumes from Gemotry service
+
+  void FixPMTReferenceTimes(StandardRecord &rec, double PMT_reference_time);
+  void FixCRTReferenceTimes(StandardRecord &rec, double CRTT0_reference_time, double CRTT1_reference_time);
+
+  /// Equivalent of FindManyP except a return that is !isValid() prints a
+  /// messsage and aborts if StrictMode is true.
+  template <class T, class U>
+  art::FindManyP<T> FindManyPStrict(const U& from, const art::Event& evt,
+                                    const art::InputTag& label) const;
+
+  template <class T, class D, class U>
+  art::FindManyP<T, D> FindManyPDStrict(const U& from,
+                                        const art::Event& evt,
+                                        const art::InputTag& tag) const;
+
+  /// Equivalent of FindOneP except a return that is !isValid() prints a
+  /// messsage and aborts if StrictMode is true.
+  template <class T, class U>
+  art::FindOneP<T> FindOnePStrict(const U& from, const art::Event& evt,
+				  const art::InputTag& label) const;
+
+  template <class T, class D, class U>
+  art::FindOneP<T, D> FindOnePDStrict(const U& from,
+                                      const art::Event& evt,
+                                      const art::InputTag& tag) const;
+
+  /// \brief Retrieve an object from an association, with error handling
+  ///
+  /// This can go wrong in two ways: either the FindManyP itself is
+  /// invalid, or the result for the requested index is empty. In most
+  /// cases these have the same response, so conflating them here
+  /// saves redundancy elsewhere.
+  ///
+  /// \param      fm  The FindManyP object describing the association
+  /// \param      idx Which element of the FindManyP to look it
+  /// \param[out] ret The product retrieved
+  /// \return          Whether \a ret was filled
+  template <class T>
+  bool GetAssociatedProduct(const art::FindManyP<T>& fm, int idx, T& ret) const;
+
+  /// Equivalent of evt.getByLabel(label, handle) except failedToGet
+  /// prints a message and aborts if StrictMode is true.
+  template <class EvtT, class T>
+  void GetByLabelStrict(const EvtT& evt, const std::string& label,
+                        art::Handle<T>& handle) const;
+
+  /// Equivalent of evt.getByLabel(label, handle) except failedToGet
+  /// prints a message.
+  template <class T>
+  void GetByLabelIfExists(const art::Event& evt, const std::string& label,
+                          art::Handle<T>& handle) const;
+
+  /// \param      pset The parameter set
+  /// \param      name Pass "foo.bar.baz" as {"foo", "bar", "baz"}
+  /// \param[out] ret  Value of the key, not set if we return false
+  /// \return          Whether the key was found
+  template <class T>
+  bool GetPsetParameter(const fhicl::ParameterSet& pset,
+                        const std::vector<std::string>& name, T& ret) const;
+
+  static bool EssentiallyEqual(double a, double b, double precision = 0.0001) {
+    return a <= (b + precision) && a >= (b - precision);
+  }
+
+  static bool sortRBTrkLength(const art::Ptr<recob::Track>& a,
+                                const art::Ptr<recob::Track>& b) {
+    return a->Length() > b->Length();
+  }
+  // static bool sortTrackLength(const SRTrack& a, const SRTrack& b) {
+  //   return a.len > b.len;
+  // }
+//.......................................................................
+}; //Producer
+
+//.......................................................................
+
+  CAFMaker::CAFMaker(const Parameters& params)
+  : art::EDProducer{params},
+    fParams(params()), fFile(0),
+    fFakeRecoRandomEngine(
+      art::ServiceHandle<rndm::NuRandomService>()->registerAndSeedEngine(
+        createEngine(0, "HepJamesRandom", "FakeReco"),
+        "HepJamesRandom", "FakeReco", fParams.FakeRecoRandomSeed
+      )),
+    fBlindRandomEngine(
+      art::ServiceHandle<rndm::NuRandomService>()->registerAndSeedEngine(
+        createEngine(0, "HepJamesRandom", "Blinding"),
+        "HepJamesRandom", "Blinding", fParams.BlindingRandomSeed
+      ))
   {
-    return static_cast<double>(info.spill_time_s) +
-           static_cast<double>(info.spill_time_ns) * 1.0e-9;
+  // Note: we will define isRealData on a per event basis in produce function [using event.isRealData()], at least for now.
+
+  fCafFilename = fParams.CAFFilename();
+  fOverrideRealData = fParams.OverrideRealData();
+  fFlatCafFilename = fParams.FlatCAFFilename();
+
+  // Normally CAFMaker is run wit no output ART stream, so these go
+  // nowhere, but can be occasionally useful for filtering in ART
+
+  produces<std::vector<caf::StandardRecord>>();
+  //produces<art::Assns<caf::StandardRecord, recob::Slice>>();
+
+  // setup volume definitions
+  InitVolumes();
+
+  fSaveGENIEEventRecord = fParams.SaveGENIEEventRecord();
+
+}
+
+//......................................................................
+  double CAFMaker::GetBlindPOTScale() const {
+   std::string bstring = std::to_string(fParams.POTBlindSeed());
+   int slen = bstring.length();
+   std::string s1 = bstring.substr(0,int(slen/2));
+   std::string s2 = bstring.substr(int(slen/2));
+   double rat = stod(s1)/stod(s2);
+   while (abs(rat)>1){
+     rat = -1 * (abs(rat) - 1);
+   }
+   return 1 + rat*0.3;
+
   }
 
   /// Module to create Common Analysis Files from ART files
@@ -806,8 +1074,79 @@ namespace caf
       if (override == kUNKNOWN)
         abort();
     }
-    // Now must be one or the other
-    if (hasSBND)
+
+    // If there were no weights available, return
+    if (!wgt_params.isValid()){
+      std::cout << "CAFMaker: no EventWeightParameterSet found under label '" << label << "'" << std::endl;
+      return;
+    }
+
+    fPrevWeightPSet[label] = *wgt_params;
+
+    for(const sbn::evwgh::EventWeightParameterSet& pset: *wgt_params){
+      FillSRGlobal(pset, global, fWeightPSetIndex);
+    } // end for pset
+  } // end for label
+
+  if(fFile) AddGlobalTreeToFile(fFile, global);
+  if(fParams.CreateBlindedCAF() && fFileb) AddGlobalTreeToFile(fFileb, global);
+  if(fParams.CreateBlindedCAF() && fFilep) AddGlobalTreeToFile(fFilep, global);
+  if(fFlatFile) AddGlobalTreeToFile(fFlatFile, global);
+  if(fParams.CreateBlindedCAF() && fFlatFileb) AddGlobalTreeToFile(fFlatFileb, global);
+  if(fParams.CreateBlindedCAF() && fFlatFilep) AddGlobalTreeToFile(fFlatFilep, global);
+}
+
+//......................................................................
+void CAFMaker::beginSubRun(art::SubRun& sr) {
+
+  // get POT information
+  fBNBInfo.clear();
+  fNuMIInfo.clear();
+
+  fBNBInfoEventMap.clear();
+  fNuMIInfoEventMap.clear();
+  fHasBNBInfo = false;
+  fHasNuMIInfo = false;
+
+  fSubRunPOT = 0;
+  fOffbeamBNBGates = 0.;
+  fOffbeamNuMIGates = 0.;
+
+  auto bnb_spill          = sr.getHandle<std::vector<sbn::BNBSpillInfo>>(fParams.BNBPOTDataLabel());
+  auto numi_spill         = sr.getHandle<std::vector<sbn::NuMISpillInfo>>(fParams.NuMIPOTDataLabel());
+  auto bnb_offbeam_spill  = sr.getHandle<std::vector<sbn::EXTCountInfo>>(fParams.OffbeamBNBCountDataLabel());
+  auto numi_offbeam_spill = sr.getHandle<std::vector<sbn::EXTCountInfo>>(fParams.OffbeamNuMICountDataLabel());
+
+  if(bool(bnb_spill) + bool(numi_spill) + bool(bnb_offbeam_spill) + bool(numi_offbeam_spill) > 1) {
+    std::cout << "Expected at most one of " << fParams.BNBPOTDataLabel() << ", "
+              << fParams.NuMIPOTDataLabel() << ", " << fParams.OffbeamBNBCountDataLabel() << ", and "
+              << fParams.OffbeamNuMICountDataLabel() << ". Found ";
+    if(bnb_spill) std::cout << fParams.BNBPOTDataLabel() << " ";
+    if(numi_spill) std::cout << fParams.NuMIPOTDataLabel() << " ";
+    if(bnb_offbeam_spill) std::cout << fParams.OffbeamBNBCountDataLabel() << " ";
+    if(numi_offbeam_spill) std::cout << fParams.OffbeamNuMICountDataLabel();
+    std::cout << std::endl;
+    abort();
+  }
+  if ( fOverrideRealData ) {
+	// Expects a generator POT summary then...
+	if(auto pot_handle = sr.getHandle<sumdata::POTSummary>(fParams.GenLabel())){
+      		fSubRunPOT = pot_handle->totgoodpot;
+      		fTotalPOT += fSubRunPOT;
+    	}else{
+      		std::cout << "Did not find MC POT info under " << fParams.GenLabel() << std::endl;
+      		if(fParams.StrictMode()) abort();
+    	}
+  }else{
+  if(bnb_spill){
+    		FillExposure(*bnb_spill, fBNBInfo, fSubRunPOT);
+    fTotalPOT += fSubRunPOT;
+
+    // Find the spill for each event and fill the event map:
+    // We take the latest spill for a given event number to be the one to keep
+    fHasBNBInfo = true;
+    for(const sbn::BNBSpillInfo& info: *bnb_spill)
+>>>>>>> develop
     {
       fDet = kSBND;
       std::cout << "Detected SBND" << std::endl;
@@ -1008,19 +1347,10 @@ namespace caf
 
       // Otherwise, if one label is blank, maybe no POT was the expected result
     }
-
-    std::cout << "POT: " << fSubRunPOT << std::endl;
-
-    fFirstInSubRun = true;
-    fFirstBlindInSubRun = true;
-    fFirstPrescaleInSubRun = true;
+    // Otherwise, if one label is blank, maybe no POT was the expected result
   }
-
-  //......................................................................
-  void CAFMaker::AddEnvToFile(TFile *outfile)
-  {
-    // Global information about the processing details:
-    std::map<std::string, std::string> envmap;
+ }
+  std::cout << "POT: " << fSubRunPOT << std::endl;
 
     // Environ comes from unistd.h
     // environ is not present on OSX for some reason, so just use getenv to
@@ -1332,19 +1662,179 @@ namespace caf
     return true;
   }
 
-  //......................................................................
-  template <class EvtT, class T>
-  void CAFMaker::GetByLabelStrict(const EvtT &evt, const std::string &label,
-                                  art::Handle<T> &handle) const
-  {
-    evt.getByLabel(label, handle);
-    if (!label.empty() && handle.failedToGet() && fParams.StrictMode())
-    {
-      std::cout << "CAFMaker: No product of type '"
-                << cet::demangle_symbol(typeid(*handle).name())
-                << "' found under label '" << label << "'. "
-                << "Set 'StrictMode: false' to continue anyway." << std::endl;
-      abort();
+  return ret;
+}
+
+//......................................................................
+template <class T>
+bool CAFMaker::GetAssociatedProduct(const art::FindManyP<T>& fm, int idx,
+                                    T& ret) const {
+  if (!fm.isValid()) return false;
+
+  const std::vector<art::Ptr<T>> prods = fm.at(idx);
+
+  if (prods.empty()) return false;
+
+  ret = *prods[0];
+
+  return true;
+}
+
+//......................................................................
+template <class EvtT, class T>
+void CAFMaker::GetByLabelStrict(const EvtT& evt, const std::string& label,
+                                art::Handle<T>& handle) const {
+  evt.getByLabel(label, handle);
+  if (!label.empty() && handle.failedToGet() && fParams.StrictMode()) {
+    std::cout << "CAFMaker: No product of type '"
+              << cet::demangle_symbol(typeid(*handle).name())
+              << "' found under label '" << label << "'. "
+              << "Set 'StrictMode: false' to continue anyway." << std::endl;
+    abort();
+  }
+}
+
+//......................................................................
+template <class T>
+void CAFMaker::GetByLabelIfExists(const art::Event& evt,
+                                  const std::string& label,
+                                  art::Handle<T>& handle) const {
+  evt.getByLabel(label, handle);
+  if (!label.empty() && handle.failedToGet() && fParams.StrictMode()) {
+    std::cout << "CAFMaker: No product of type '"
+              << cet::demangle_symbol(typeid(*handle).name())
+              << "' found under label '" << label << "'. "
+              << "Continuing without it." << std::endl;
+  }
+}
+
+//......................................................................
+template <class T>
+bool CAFMaker::GetPsetParameter(const fhicl::ParameterSet& pset,
+                                const std::vector<std::string>& name,
+                                T& ret) const {
+  fhicl::ParameterSet p = pset;
+  for (unsigned int i = 0; i < name.size() - 1; ++i) {
+    if (!p.has_key(name[i])) return false;
+    p = p.get<fhicl::ParameterSet>(name[i]);
+  }
+  if (!p.has_key(name.back())) return false;
+  ret = p.get<T>(name.back());
+  return true;
+}
+
+//......................................................................
+void CAFMaker::produce(art::Event& evt) noexcept {
+
+  bool const firstInFile = (fIndexInFile++ == 0);
+
+  // is this event real data? -- BH: if fOverrideRealData, treat it as MC. Otherwise, get the info from the art event.
+  bool isRealData = !fOverrideRealData && evt.isRealData();
+
+  std::unique_ptr<std::vector<caf::StandardRecord>> srcol(
+      new std::vector<caf::StandardRecord>);
+
+  std::unique_ptr<art::Assns<caf::StandardRecord, recob::Slice>> srAssn(
+      new art::Assns<caf::StandardRecord, recob::Slice>);
+
+  fTotalEvents += 1;
+
+  // get all the truth's
+  art::Handle<std::vector<simb::MCTruth>> mctruth_handle;
+  GetByLabelStrict(evt, fParams.GenLabel(), mctruth_handle);
+
+  std::vector<art::Ptr<simb::MCTruth>> mctruths;
+  if (mctruth_handle.isValid()) {
+    art::fill_ptr_vector(mctruths, mctruth_handle);
+  }
+
+  // And associated GTruth objects
+  art::FindManyP<simb::GTruth> fmp_gtruth = FindManyPStrict<simb::GTruth>(mctruths, evt, fParams.GenLabel());
+
+  art::Handle<std::vector<simb::MCTruth>> cosmic_mctruth_handle;
+  evt.getByLabel(fParams.CosmicGenLabel(), cosmic_mctruth_handle);
+
+  art::Handle<std::vector<simb::MCTruth>> pgun_mctruth_handle;
+  evt.getByLabel(fParams.ParticleGunGenLabel(), pgun_mctruth_handle);
+
+  // use the MCTruth to determine the simulation type
+  caf::MCType_t mctype = caf::kMCUnknown;
+  if (mctruth_handle.isValid() && cosmic_mctruth_handle.isValid()) {
+    mctype = caf::kMCOverlay;
+  }
+  else if (mctruth_handle.isValid()) {
+    mctype = caf::kMCNeutrino;
+  }
+  else if (cosmic_mctruth_handle.isValid()) {
+    mctype = caf::kMCCosmic;
+  }
+  else if (pgun_mctruth_handle.isValid()) {
+    mctype = caf::kMCParticleGun;
+  }
+
+  // Lookup the MeV-Portal info if it is there
+  //
+  // Don't be "strict" because this will only be true for a subset of MC
+  art::Handle<std::vector<evgen::ldm::MeVPrtlTruth>> mevprtltruth_handle;
+  evt.getByLabel(fParams.GenLabel(), mevprtltruth_handle);
+
+  std::vector<art::Ptr<evgen::ldm::MeVPrtlTruth>> mevprtl_truths;
+  if (mevprtltruth_handle.isValid()) art::fill_ptr_vector(mevprtl_truths, mevprtltruth_handle);
+
+  // prepare map of track ID's to energy depositions
+  art::Handle<std::vector<sim::SimChannel>> simchannel_handle;
+  GetByLabelStrict(evt, fParams.SimChannelLabel(), simchannel_handle);
+
+  std::vector<art::Ptr<sim::SimChannel>> simchannels;
+  if (simchannel_handle.isValid()) {
+    art::fill_ptr_vector(simchannels, simchannel_handle);
+  }
+
+  art::Handle<std::vector<simb::MCFlux>> mcflux_handle;
+  GetByLabelStrict(evt, std::string("generator"), mcflux_handle);
+
+  std::vector<art::Ptr<simb::MCFlux>> mcfluxes;
+  if (mcflux_handle.isValid()) {
+    art::fill_ptr_vector(mcfluxes, mcflux_handle);
+  }
+
+  // get the MCReco for the fake-reco
+  art::Handle<std::vector<sim::MCTrack>> mctrack_handle;
+  GetByLabelStrict(evt, std::string("mcreco"), mctrack_handle);
+  std::vector<art::Ptr<sim::MCTrack>> mctracks;
+  if (mctrack_handle.isValid()) {
+    art::fill_ptr_vector(mctracks, mctrack_handle);
+  }
+
+  // get all of the true particles from G4
+  std::vector<caf::SRTrueParticle> true_particles;
+  art::Handle<std::vector<simb::MCParticle>> mc_particles;
+  GetByLabelStrict(evt, fParams.G4Label(), mc_particles);
+
+  // collect services
+  // Moved ParticleInventory and BackTracker services definition as needed elsewhere (BH)
+  auto const clock_data = art::ServiceHandle<detinfo::DetectorClocksService const>()->DataFor(evt);
+  auto const dprop =
+    art::ServiceHandle<detinfo::DetectorPropertiesService const>()->DataFor(evt, clock_data);
+  const geo::GeometryCore* geom = lar::providerFrom<geo::Geometry>();
+  const geo::WireReadoutGeom &wireReadout =
+    art::ServiceHandle<geo::WireReadout>()->Get();
+
+  auto const *sce = lar::providerFrom<spacecharge::SpaceChargeService>();
+
+  // Collect the input TPC reco tags
+  std::vector<std::string> pandora_tag_suffixes;
+  fParams.PandoraTagSuffixes(pandora_tag_suffixes);
+  if (pandora_tag_suffixes.size() == 0) pandora_tag_suffixes.push_back("");
+
+  // collect the TPC hits
+  std::vector<art::Ptr<recob::Hit>> hits;
+  for (unsigned i_tag = 0; i_tag < pandora_tag_suffixes.size(); i_tag++) {
+    const std::string &pandora_tag_suffix = pandora_tag_suffixes[i_tag];
+    art::Handle<std::vector<recob::Hit>> thisHits;
+    GetByLabelStrict(evt, fParams.HitLabel() + pandora_tag_suffix, thisHits);
+    if (thisHits.isValid()) {
+      art::fill_ptr_vector(hits, thisHits);
     }
   }
 
@@ -1640,18 +2130,35 @@ namespace caf
           }
         }
 
-        fGenieEventCounter++;
-      }
-
-      // Don't check for syst weight assocations until we have something (MCTruth
-      // corresponding to a neutrino) that could plausibly be reweighted. This
-      // avoids the need for special configuration for cosmics or single particle
-      // simulation, and real data.
-      if (fmpewm.empty() && mctruth->NeutrinoSet())
-      {
-        for (const std::string &label : fParams.SystWeightLabels())
-        {
-          fmpewm.push_back(FindManyPStrict<sbn::evwgh::EventWeightMap>(mctruths, evt, label));
+	  int iparticle=0;
+	  genie::GHepParticle * p = 0;
+	  while( (genie_rec->Particle(iparticle) != 0) && (iparticle < 250) ) {
+	    p = genie_rec->Particle(iparticle);
+	    fGenieEvtRec_brStdHepPdg[iparticle] = p->Pdg();
+	    fGenieEvtRec_brStdHepStatus[iparticle] = (int) p->Status(); 
+	    fGenieEvtRec_brStdHepRescat[iparticle] = p->RescatterCode(); 
+	    fGenieEvtRec_brStdHepX4    [iparticle][0] = p->X4()->X(); 
+	    fGenieEvtRec_brStdHepX4    [iparticle][1] = p->X4()->Y(); 
+	    fGenieEvtRec_brStdHepX4    [iparticle][2] = p->X4()->Z(); 
+	    fGenieEvtRec_brStdHepX4    [iparticle][3] = p->X4()->T(); 
+	    fGenieEvtRec_brStdHepP4    [iparticle][0] = p->P4()->Px(); 
+	    fGenieEvtRec_brStdHepP4    [iparticle][1] = p->P4()->Py(); 
+	    fGenieEvtRec_brStdHepP4    [iparticle][2] = p->P4()->Pz(); 
+	    fGenieEvtRec_brStdHepP4    [iparticle][3] = p->P4()->E(); 
+	    if(p->PolzIsSet()) {
+	      fGenieEvtRec_brStdHepPolz  [iparticle][0] = TMath::Sin(p->PolzPolarAngle()) * TMath::Cos(p->PolzAzimuthAngle());
+	      fGenieEvtRec_brStdHepPolz  [iparticle][1] = TMath::Sin(p->PolzPolarAngle()) * TMath::Sin(p->PolzAzimuthAngle());
+	      fGenieEvtRec_brStdHepPolz  [iparticle][2] = TMath::Cos(p->PolzPolarAngle());
+	    }
+	    fGenieEvtRec_brStdHepFd    [iparticle] = p->FirstDaughter(); 
+	    fGenieEvtRec_brStdHepLd    [iparticle] = p->LastDaughter(); 
+	    fGenieEvtRec_brStdHepFm    [iparticle] = p->FirstMother(); 
+	    fGenieEvtRec_brStdHepLm    [iparticle] = p->LastMother(); 
+	    iparticle++;
+	  }
+	  fGenieEvtRec_brStdHepN = iparticle;
+	  
+          fFlatGenieTree->Fill();
         }
       }
 
@@ -1808,22 +2315,171 @@ namespace caf
       }
     }
 
-    // Get all of the CRTPMT Matches
-    std::vector<caf::SRCRTPMTMatch> srcrtpmtmatches;
-    art::Handle<std::vector<sbn::crt::CRTPMTMatching>> crtpmtmatch_handle;
-    GetByLabelStrict(evt, fParams.CRTPMTLabel(), crtpmtmatch_handle);
-    if (crtpmtmatch_handle.isValid())
-    {
-      const std::vector<sbn::crt::CRTPMTMatching> &crtpmtmatches = *crtpmtmatch_handle;
-      for (unsigned i = 0; i < crtpmtmatches.size(); i++)
-      {
-        srcrtpmtmatches.emplace_back();
-        FillCRTPMTMatch(crtpmtmatches[i], srcrtpmtmatches.back());
+  // Get all of the CRTPMT Matches
+  std::vector<caf::SRCRTPMTMatch> srcrtpmtmatches;
+  art::Handle<std::vector<sbn::crt::CRTPMTMatching>> crtpmtmatch_handle;
+  GetByLabelStrict(evt, fParams.CRTPMTLabel(), crtpmtmatch_handle);
+  if(crtpmtmatch_handle.isValid()){
+    const std::vector<sbn::crt::CRTPMTMatching> &crtpmtmatches = *crtpmtmatch_handle;
+    for (unsigned i = 0; i < crtpmtmatches.size(); i++) {
+      srcrtpmtmatches.emplace_back();
+      FillCRTPMTMatch(crtpmtmatches[i], srcrtpmtmatches.back());
+    }
+  }
+
+  // Get all of the OpFlashes
+  std::vector<caf::SROpFlash> srflashes;
+  if(fDet == kICARUS)
+  {
+    for (const std::string& pandora_tag_suffix : pandora_tag_suffixes) {
+      art::Handle<std::vector<recob::OpFlash>> flashes_handle;
+      GetByLabelStrict(evt, fParams.OpFlashLabel() + pandora_tag_suffix, flashes_handle);
+      // fill into event
+      if (flashes_handle.isValid()) {
+        const std::vector<recob::OpFlash> &opflashes = *flashes_handle;
+        int cryostat = ( pandora_tag_suffix.find("W") != std::string::npos ) ? 1 : 0;
+
+        // get associated OpHits for each OpFlash
+        art::FindMany<recob::OpHit> findManyHits(flashes_handle, evt, fParams.OpFlashLabel() + pandora_tag_suffix);
+
+        int iflash=0;
+        for (const recob::OpFlash& flash : opflashes) {
+
+          std::vector<recob::OpHit const*> const& ophits = findManyHits.at(iflash);
+
+          srflashes.emplace_back();
+          FillICARUSOpFlash(flash, ophits, cryostat, srflashes.back());
+          iflash++;
+        }
+      }
+    }
+  }
+  else if(fDet == kSBND)
+  {
+    std::vector<std::string> tpc_suffixes_sbnd = {"tpc0", "tpc1"};
+
+    for (size_t tpc=0; tpc<tpc_suffixes_sbnd.size(); tpc++) {
+      art::Handle<std::vector<recob::OpFlash>> flashes_handle;
+      GetByLabelStrict(evt, fParams.OpFlashLabel() + tpc_suffixes_sbnd[tpc], flashes_handle);
+      // fill into event
+      if (flashes_handle.isValid()) {
+        const std::vector<recob::OpFlash> &opflashes = *flashes_handle;
+        // get associated OpHits for each OpFlash
+        art::FindMany<recob::OpHit> findManyHits(flashes_handle, evt, fParams.OpFlashLabel() + tpc_suffixes_sbnd[tpc]);
+        int iflash=0;
+        for (const recob::OpFlash& flash : opflashes) {
+          std::vector<recob::OpHit const*> const& ophits = findManyHits.at(iflash);
+          srflashes.emplace_back();
+          FillSBNDOpFlash(flash, ophits, tpc, srflashes.back());
+          iflash++;
+        }
+      }
+    }
+  }
+
+  // collect the TPC slices
+  std::vector<art::Ptr<recob::Slice>> slices;
+  std::vector<std::string> slice_tag_suffixes;
+  std::vector<unsigned> slice_tag_indices;
+  for (unsigned i_tag = 0; i_tag < pandora_tag_suffixes.size(); i_tag++) {
+    const std::string &pandora_tag_suffix = pandora_tag_suffixes[i_tag];
+    // Get a handle on the slices
+    art::Handle<std::vector<recob::Slice>> thisSlices;
+    GetByLabelStrict(evt, fParams.PFParticleLabel() + pandora_tag_suffix, thisSlices);
+    if (thisSlices.isValid()) {
+      art::fill_ptr_vector(slices, thisSlices);
+      for (unsigned i = 0; i < thisSlices->size(); i++) {
+        slice_tag_suffixes.push_back(pandora_tag_suffix);
+        slice_tag_indices.push_back(i_tag);
+      }
+    }
+  }
+
+  // nu graph
+  std::vector< art::Handle<std::vector<unsigned int>> > ng2_slice_hit_map_handle(pandora_tag_suffixes.size());
+  std::vector< art::Handle<std::vector<anab::FeatureVector<1>>> > ng2_filter_handle(pandora_tag_suffixes.size());
+  std::vector< art::Handle<std::vector<anab::FeatureVector<5>>> > ng2_semantic_handle(pandora_tag_suffixes.size());
+  for (unsigned i_tag = 0; i_tag < pandora_tag_suffixes.size(); i_tag++) {
+    const std::string &pandora_tag_suffix = pandora_tag_suffixes[i_tag];
+    GetByLabelIfExists(evt, fParams.NuGraphSliceHitLabel().encode() + pandora_tag_suffix, ng2_slice_hit_map_handle[i_tag]);
+    GetByLabelIfExists(evt, fParams.NuGraphFilterLabel().label() + pandora_tag_suffix + ":" + fParams.NuGraphFilterLabel().instance(), ng2_filter_handle[i_tag]);
+    GetByLabelIfExists(evt, fParams.NuGraphSemanticLabel().label() + pandora_tag_suffix + ":" + fParams.NuGraphSemanticLabel().instance(), ng2_semantic_handle[i_tag]);
+  }
+
+  // The Standard Record
+  // Branch entry definition -- contains list of slices, CRT information, and truth information
+  StandardRecord rec;
+
+  //#######################################################
+  // Loop over slices
+  //#######################################################
+  for (unsigned sliceID = 0; sliceID < slices.size(); sliceID++) {
+    // Holder for information on this slice
+    caf::SRSlice recslc;
+    recslc.truth.det = fDet;
+
+    art::Ptr<recob::Slice> slice = slices[sliceID];
+    const std::string &slice_tag_suff = slice_tag_suffixes[sliceID];
+    unsigned producer = slice_tag_indices[sliceID];
+
+    // Get tracks & showers here
+    std::vector<art::Ptr<recob::Slice>> sliceList {slice};
+    art::FindManyP<recob::PFParticle> findManyPFParts =
+       FindManyPStrict<recob::PFParticle>(sliceList, evt,  fParams.PFParticleLabel() + slice_tag_suff);
+
+    std::vector<art::Ptr<recob::PFParticle>> fmPFPart;
+    if (findManyPFParts.isValid()) {
+      fmPFPart = findManyPFParts.at(0);
+    }
+
+    art::FindManyP<recob::Hit> fmSlcHits =
+      FindManyPStrict<recob::Hit>(sliceList, evt, fParams.PFParticleLabel() + slice_tag_suff);
+
+    std::vector<art::Ptr<recob::Hit>> slcHits;
+    if (fmSlcHits.isValid()) {
+      slcHits = fmSlcHits.at(0);
+    }
+
+    art::FindOneP<sbn::CRUMBSResult> foSlcCRUMBS =
+      FindOnePStrict<sbn::CRUMBSResult>(sliceList, evt,
+          fParams.CRUMBSLabel() + slice_tag_suff);
+    const sbn::CRUMBSResult *slcCRUMBS = nullptr;
+    if (foSlcCRUMBS.isValid()) {
+      slcCRUMBS = foSlcCRUMBS.at(0).get();
+    }
+
+    std::map<std::string, art::FindManyP<sbn::SimpleFlashMatch> > fmatch_assn_map;
+    std::vector<std::string> flashmatch_opdet_suffixes, flashmatch_scecryo_suffixes;
+    fParams.FlashMatchOpDetSuffixes(flashmatch_opdet_suffixes);
+    fParams.FlashMatchSCECryoSuffixes(flashmatch_scecryo_suffixes);
+    for(auto flash_opdet_suff : flashmatch_opdet_suffixes) {
+      std::string fname_opdet = fParams.FlashMatchLabel() + flash_opdet_suff;
+      for(auto flash_scecryo_suff : flashmatch_scecryo_suffixes) {
+        std::string fname_opdet_scecryo = fname_opdet + flash_scecryo_suff;
+        art::FindManyP<sbn::SimpleFlashMatch> sfm_assn =
+          FindManyPStrict<sbn::SimpleFlashMatch>(fmPFPart, evt, fname_opdet_scecryo);
+        fmatch_assn_map.emplace(std::make_pair(fname_opdet, sfm_assn));
       }
     }
 
-    // Get all of the OpFlashes
-    std::vector<caf::SROpFlash> srflashes;
+    std::vector<art::Ptr<anab::FeatureVector<1>>> ng2_filter_vec;
+    std::vector<art::Ptr<anab::FeatureVector<5>>> ng2_semantic_vec;
+    if (ng2_filter_handle[producer].isValid()) {
+      art::fill_ptr_vector(ng2_filter_vec,ng2_filter_handle[producer]);
+    }
+    if (ng2_semantic_handle[producer].isValid()) {
+      art::fill_ptr_vector(ng2_semantic_vec,ng2_semantic_handle[producer]);
+    }
+    if (ng2_slice_hit_map_handle[producer].isValid()) {
+      FillSliceNuGraph(slcHits,*ng2_slice_hit_map_handle[producer],ng2_filter_vec,ng2_semantic_vec,recslc);
+    }
+
+    art::FindManyP<sbn::OpT0Finder> fmOpT0 =
+      FindManyPStrict<sbn::OpT0Finder>(sliceList, evt, fParams.OpT0Label() + slice_tag_suff);
+    std::vector<art::Ptr<sbn::OpT0Finder>> slcOpT0;
+    if (fmOpT0.isValid())
+      slcOpT0 = fmOpT0.at(0);
+>>>>>>> develop
 
     for (const std::string &pandora_tag_suffix : pandora_tag_suffixes)
     {
@@ -1844,9 +2500,325 @@ namespace caf
 
           std::vector<recob::OpHit const *> const &ophits = findManyHits.at(iflash);
 
+<<<<<<< HEAD
           srflashes.emplace_back();
           FillOpFlash(flash, ophits, cryostat, srflashes.back());
           iflash++;
+=======
+    std::vector<art::Ptr<recob::SpacePoint>> slcSpacePoints;
+    if (fmSpacePoint.isValid()) {
+      for (unsigned i = 0; i < fmSpacePoint.size(); i++) {
+        const std::vector<art::Ptr<recob::SpacePoint>> &thisSpacePoints = fmSpacePoint.at(i);
+        if (thisSpacePoints.size() == 0) {
+          slcSpacePoints.emplace_back(); // nullptr
+        }
+        else if (thisSpacePoints.size() == 1) {
+          slcSpacePoints.push_back(fmSpacePoint.at(i).at(0));
+        }
+        else abort();
+      }
+    }
+
+    art::FindManyP<recob::PFParticle> fmSpacePointPFPs =
+      FindManyPStrict<recob::PFParticle>(slcSpacePoints, evt, fParams.PFParticleLabel() + slice_tag_suff);
+
+    art::FindManyP<recob::Cluster> fmPFPClusters =
+      FindManyPStrict<recob::Cluster>(fmPFPart, evt, fParams.PFParticleLabel() + slice_tag_suff);
+
+    std::vector<std::vector<art::Ptr<recob::Hit>>> fmPFPartHits;
+    // make Ptr's to clusters for cluster -> other object associations
+    if (fmPFPClusters.isValid()) {
+      for (size_t ipf=0; ipf<fmPFPart.size();++ipf) {
+	std::vector<art::Ptr<recob::Hit>> pfphits;
+	std::vector<art::Ptr<recob::Cluster>> pfclusters = fmPFPClusters.at(ipf);
+	art::FindManyP<recob::Hit> fmCluHits = FindManyPStrict<recob::Hit>(pfclusters, evt, fParams.PFParticleLabel() + slice_tag_suff);
+	for (size_t icl=0; icl<fmCluHits.size();icl++) {
+	  for (auto hit : fmCluHits.at(icl)) {
+	    pfphits.push_back(hit);
+	  }
+	}
+	fmPFPartHits.push_back(pfphits);
+      }
+    }
+
+    art::FindManyP<recob::Shower> fmShower =
+      FindManyPStrict<recob::Shower>(fmPFPart, evt, fParams.RecoShowerLabel() + slice_tag_suff);
+
+    // make Ptr's to showers for shower -> other object associations
+    std::vector<art::Ptr<recob::Shower>> slcShowers;
+    if (fmShower.isValid()) {
+      for (unsigned i = 0; i < fmShower.size(); i++) {
+        const std::vector<art::Ptr<recob::Shower>> &thisShowers = fmShower.at(i);
+        if (thisShowers.size() == 0) {
+          slcShowers.emplace_back(); // nullptr
+        }
+        else if (thisShowers.size() == 1) {
+          slcShowers.push_back(fmShower.at(i).at(0));
+        }
+        else assert(false); // bad
+      }
+    }
+
+    art::FindManyP<float> fmShowerCosmicDist =
+      FindManyPStrict<float>(slcShowers, evt, fParams.ShowerCosmicDistLabel() + slice_tag_suff);
+
+    art::FindManyP<float> fmShowerResiduals =
+      FindManyPStrict<float>(slcShowers, evt, fParams.RecoShowerSelectionLabel() + slice_tag_suff);
+
+    art::FindManyP<sbn::ShowerTrackFit> fmShowerTrackFit =
+      FindManyPStrict<sbn::ShowerTrackFit>(slcShowers, evt, fParams.RecoShowerSelectionLabel() + slice_tag_suff);
+
+    art::FindManyP<sbn::ShowerDensityFit> fmShowerDensityFit =
+      FindManyPStrict<sbn::ShowerDensityFit>(slcShowers, evt, fParams.RecoShowerSelectionLabel() + slice_tag_suff);
+
+    art::FindManyP<recob::Track> fmTrack =
+      FindManyPStrict<recob::Track>(fmPFPart, evt,
+            fParams.RecoTrackLabel() + slice_tag_suff);
+
+    art::FindOneP<anab::T0> f1PFPT0 =
+      FindOnePStrict<anab::T0>(fmPFPart, evt,
+            fParams.PFParticleLabel() + slice_tag_suff);
+
+    // make Ptr's to tracks for track -> other object associations
+    std::vector<art::Ptr<recob::Track>> slcTracks;
+    if (fmTrack.isValid()) {
+      for (unsigned i = 0; i < fmTrack.size(); i++) {
+        const std::vector<art::Ptr<recob::Track>> &thisTracks = fmTrack.at(i);
+        if (thisTracks.size() == 0) {
+          slcTracks.emplace_back(); // nullptr
+        }
+        else if (thisTracks.size() == 1) {
+          slcTracks.push_back(fmTrack.at(i).at(0));
+        }
+        else assert(false); // bad
+      }
+    }
+
+    // Get the stubs!
+    art::FindManyP<sbn::Stub> fmSlcStubs =
+      FindManyPStrict<sbn::Stub>(sliceList, evt,
+          fParams.StubLabel() + slice_tag_suff);
+
+    std::vector<art::Ptr<sbn::Stub>> fmStubs;
+    if (fmSlcStubs.isValid()) {
+      fmStubs = fmSlcStubs.at(0);
+    }
+
+    // Lookup stubs to overlaid PFP
+    art::FindManyP<recob::PFParticle> fmStubPFPs =
+      FindManyPStrict<recob::PFParticle>(fmStubs, evt,
+          fParams.StubLabel() + slice_tag_suff);
+    // and get the stub hits for truth matching
+    art::FindManyP<recob::Hit> fmStubHits =
+      FindManyPStrict<recob::Hit>(fmStubs, evt,
+          fParams.StubLabel() + slice_tag_suff);
+
+    art::FindManyP<anab::Calorimetry> fmCalo =
+      FindManyPStrict<anab::Calorimetry>(slcTracks, evt,
+           fParams.TrackCaloLabel() + slice_tag_suff);
+
+    art::FindManyP<anab::ParticleID> fmChi2PID =
+      FindManyPStrict<anab::ParticleID>(slcTracks, evt,
+          fParams.TrackChi2PidLabel() + slice_tag_suff);
+
+    art::FindManyP<sbn::ScatterClosestApproach> fmScatterClosestApproach =
+      FindManyPStrict<sbn::ScatterClosestApproach>(slcTracks, evt,
+          fParams.TrackScatterClosestApproachLabel() + slice_tag_suff);
+
+    art::FindManyP<sbn::StoppingChi2Fit> fmStoppingChi2Fit =
+      FindManyPStrict<sbn::StoppingChi2Fit>(slcTracks, evt,
+          fParams.TrackStoppingChi2FitLabel() + slice_tag_suff);
+
+    art::FindManyP<sbn::MVAPID> fmTrackDazzle =
+      FindManyPStrict<sbn::MVAPID>(slcTracks, evt,
+          fParams.TrackDazzleLabel() + slice_tag_suff);
+
+    art::FindManyP<sbn::MVAPID> fmShowerRazzle =
+      FindManyPStrict<sbn::MVAPID>(slcShowers, evt,
+          fParams.ShowerRazzleLabel() + slice_tag_suff);
+
+    art::FindManyP<sbn::MVAPID> fmPFPRazzled =
+      FindManyPStrict<sbn::MVAPID>(fmPFPart, evt,
+          fParams.PFPRazzledLabel() + slice_tag_suff);
+
+    art::FindManyP<sbn::PFPCNNScore> fmCNNScores = 
+      FindManyPStrict<sbn::PFPCNNScore>(fmPFPart, evt,
+          fParams.CNNScoreLabel() + slice_tag_suff);
+
+    art::FindManyP<recob::Vertex> fmVertex =
+      FindManyPStrict<recob::Vertex>(fmPFPart, evt,
+             fParams.PFParticleLabel() + slice_tag_suff);
+
+    art::FindManyP<recob::Hit> fmTrackHit =
+      FindManyPStrict<recob::Hit>(slcTracks, evt,
+          fParams.RecoTrackLabel() + slice_tag_suff);
+
+    art::FindManyP<recob::Hit> fmShowerHit =
+      FindManyPStrict<recob::Hit>(slcShowers, evt,
+          fParams.RecoShowerLabel() + slice_tag_suff);
+
+    // NOTE: The sbn::crt::CRTHit is associated to the T0. It's a bit awkward to
+    // access that here, so we do it per-track (see code where fmCRTHitMatch is accessed below)
+   
+    art::FindManyP<anab::T0> fmCRTHitMatch =
+      FindManyPStrict<anab::T0>(slcTracks, evt,
+               fParams.CRTHitMatchLabel());
+
+    art::FindManyP<sbn::crt::CRTHitT0TaggingInfo> fmCRTHitMatchInfo =
+      FindManyPStrict<sbn::crt::CRTHitT0TaggingInfo>(slcTracks, evt,
+               fParams.CRTHitMatchInfoLabel());
+
+    // TODO: also save the sbn::crt::CRTTrack in the matching so that CAFMaker has access to it
+    art::FindManyP<anab::T0> fmCRTTrackMatch =
+      FindManyPStrict<anab::T0>(slcTracks, evt,
+               fParams.CRTTrackMatchLabel() + slice_tag_suff);
+
+    art::FindOneP<sbnd::crt::CRTSpacePoint, anab::T0> foCRTSpacePointMatch =
+      FindOnePDStrict<sbnd::crt::CRTSpacePoint, anab::T0>(slcTracks, evt,
+               fParams.CRTSpacePointMatchLabel() + slice_tag_suff);
+
+    art::FindOneP<sbnd::crt::CRTTrack, anab::T0> foSBNDCRTTrackMatch =
+      FindOnePDStrict<sbnd::crt::CRTTrack, anab::T0>(slcTracks, evt,
+               fParams.SBNDCRTTrackMatchLabel() + slice_tag_suff);
+
+    std::vector<art::FindManyP<recob::MCSFitResult>> fmMCSs;
+    static const std::vector<std::string> PIDnames {"muon", "pion", "kaon", "proton"};
+    for (std::string pid: PIDnames) {
+      art::InputTag tag(fParams.TrackMCSLabel() + slice_tag_suff, pid);
+      fmMCSs.push_back(FindManyPStrict<recob::MCSFitResult>(slcTracks, evt, tag));
+    }
+
+    std::vector<art::FindManyP<sbn::RangeP>> fmRanges;
+    static const std::vector<std::string> rangePIDnames {"muon", "pion", "proton"};
+    for (std::string pid: rangePIDnames) {
+      art::InputTag tag(fParams.TrackRangeLabel() + slice_tag_suff, pid);
+      fmRanges.push_back(FindManyPStrict<sbn::RangeP>(slcTracks, evt, tag));
+    }
+
+    //    if (slice.IsNoise() || slice.NCell() == 0) continue;
+    // Because we don't care about the noise slice and slices with no hits.
+
+    // get the primary particle
+    size_t iPart;
+    for (iPart = 0; iPart < fmPFPart.size(); ++iPart ) {
+      const recob::PFParticle &thisParticle = *fmPFPart[iPart];
+      if (thisParticle.IsPrimary()) break;
+    }
+    // primary particle and meta-data
+    const recob::PFParticle *primary = (iPart == fmPFPart.size()) ? NULL : fmPFPart[iPart].get();
+    const larpandoraobj::PFParticleMetadata *primary_meta = (iPart == fmPFPart.size()) ? NULL : fmPFPMeta.at(iPart).at(0).get();
+    // get the flash match
+
+    std::map<std::string, const sbn::SimpleFlashMatch*> fmatch_map;
+    std::map<std::string, art::FindManyP<sbn::SimpleFlashMatch>>::iterator fmatch_it;
+    for(fmatch_it = fmatch_assn_map.begin();fmatch_it != fmatch_assn_map.end();fmatch_it++) {
+      auto fname = fmatch_it->first;
+      auto fm_sFM = fmatch_it->second;
+      const sbn::SimpleFlashMatch* fmatch = nullptr;
+      if (fm_sFM.isValid() && primary != NULL) {
+        std::vector<art::Ptr<sbn::SimpleFlashMatch>> fmatches = fm_sFM.at(iPart);
+        if (fmatches.size() != 0) {
+          assert(fmatches.size() == 1);
+          fmatch = fmatches[0].get();
+          fmatch_map[fname] = fmatch;
+        }
+      }
+    }
+    // get the primary vertex
+    const recob::Vertex *vertex = (iPart == fmPFPart.size() || !fmVertex.at(iPart).size()) ? NULL : fmVertex.at(iPart).at(0).get();
+
+    //#######################################################
+    // Add slice info.
+    //#######################################################
+    FillSliceVars(*slice, primary, producer, recslc);
+    FillSliceMetadata(primary_meta, recslc);
+    FillSliceFlashMatch(fmatch_map["fmatch"], recslc.fmatch);
+    FillSliceFlashMatch(fmatch_map["fmatchop"], recslc.fmatchop);
+    auto sr_flash = fmatch_map.find("fmatchara");
+    if(sr_flash!=fmatch_map.end()) {
+      FillSliceFlashMatch(fmatch_map["fmatchara"], recslc.fmatchara);
+    }
+    sr_flash = fmatch_map.find("fmatchopara");
+    if(sr_flash != fmatch_map.end()) {
+      FillSliceFlashMatch(fmatch_map["fmatchopara"], recslc.fmatchopara);
+    }
+    FillSliceVertex(vertex, recslc);
+    FillSliceCRUMBS(slcCRUMBS, recslc);
+    FillSliceOpT0Finder(slcOpT0, recslc);
+    FillSliceBarycenter(slcHits, slcSpacePoints, recslc);
+    FillTPCPMTBarycenterMatch(barycenterMatch, recslc);
+    FillCVNScores(cvnResult, recslc);
+    
+    // select slice
+    if (!SelectSlice(recslc, fParams.CutClearCosmic())) continue;
+
+    // Whether Pandora thinks this slice is a neutrino
+    //
+    // This requirement is used to determine whether to save additional
+    // per-hit information about the slice.
+    bool NeutrinoSlice = !recslc.is_clear_cosmic;
+
+    // Fill truth info after decision on selection is made
+    if ( !isRealData ) {
+      art::ServiceHandle<cheat::ParticleInventoryService> pi_serv;
+
+      FillSliceTruth(slcHits, mctruths, srtruthbranch,
+		     *pi_serv, clock_data, recslc);
+
+      FillSliceFakeReco(slcHits, mctruths, srtruthbranch,
+			*pi_serv, clock_data, recslc, true_particles, mctracks,
+                        fActiveVolumes, fFakeRecoRandomEngine);
+    }
+
+    //#######################################################
+    // Add detector dependent slice info.
+    //#######################################################
+    // if (fDet == kSBND) {
+    //   rec.sel.contain.nplanestofront = rec.slc.firstplane - (plnfirst - 1);
+    //   rec.sel.contain.nplanestoback = (plnlast) - 1 - rec.slc.lastplane;
+    // }
+
+    //#######################################################
+    // Add stub reconstructed objects.
+    //#######################################################
+    for (size_t iStub = 0; iStub < fmStubs.size(); iStub++) {
+      const sbn::Stub &thisStub = *fmStubs[iStub];
+
+      art::Ptr<recob::PFParticle> thisStubPFP;
+      if (!fmStubPFPs.at(iStub).empty()) thisStubPFP = fmStubPFPs.at(iStub).at(0);
+
+      rec.reco.stub.emplace_back();
+      FillStubVars(thisStub, thisStubPFP, rec.reco.stub.back());
+      if ( !isRealData ) FillStubTruth(fmStubHits.at(iStub), id_to_hit_energy_map, true_particles, clock_data, rec.reco.stub.back());
+      rec.reco.nstub = rec.reco.stub.size();
+
+      // Duplicate stub reco info in the srslice
+      recslc.reco.stub.push_back(rec.reco.stub.back());
+      recslc.reco.nstub = recslc.reco.stub.size();
+    }
+
+    if (fParams.FillHits()) {
+      for ( size_t iHit = 0; iHit < slcHits.size(); ++iHit ) {
+        const recob::Hit &thisHit = *slcHits[iHit];
+
+        std::vector<art::Ptr<recob::PFParticle>> thisParticle;
+        if (fmSpacePointPFPs.isValid()) {
+          thisParticle = fmSpacePointPFPs.at(iHit);
+        }
+        std::vector<art::Ptr<recob::SpacePoint>> thisPoint;
+        if (fmSpacePoint.isValid()) {
+          thisPoint = fmSpacePoint.at(iHit);
+        }
+        if (!thisParticle.empty() && !thisPoint.empty()) {
+          assert(thisParticle.size() == 1);
+          assert(thisPoint.size() == 1);
+          rec.reco.nhit++;
+          rec.reco.hit.push_back(SRHit());
+
+          FillHitVars(thisHit, producer, *thisPoint[0], *thisParticle[0], rec.reco.hit.back());
+          recslc.reco.hit.push_back(rec.reco.hit.back());
+          recslc.reco.nhit = recslc.reco.hit.size();
+>>>>>>> develop
         }
       }
     }
@@ -1939,6 +2911,7 @@ namespace caf
         slcCRUMBS = foSlcCRUMBS.at(0).get();
       }
 
+<<<<<<< HEAD
       std::map<std::string, art::FindManyP<sbn::SimpleFlashMatch>> fmatch_assn_map;
       std::vector<std::string> flashmatch_opdet_suffixes, flashmatch_scecryo_suffixes;
       fParams.FlashMatchOpDetSuffixes(flashmatch_opdet_suffixes);
@@ -1954,6 +2927,14 @@ namespace caf
           fmatch_assn_map.emplace(std::make_pair(fname_opdet, sfm_assn));
         }
       }
+=======
+      if (ng2_slice_hit_map_handle[producer].isValid()) {
+	FillPFPNuGraph(*ng2_slice_hit_map_handle[producer], ng2_filter_vec, ng2_semantic_vec, fmPFPartHits.at(iPart), pfp);
+      }
+
+      if (!thisTrack.empty())  { // it has a track!
+        assert(thisTrack.size() == 1);
+>>>>>>> develop
 
       art::FindManyP<sbn::OpT0Finder> fmOpT0 =
           FindManyPStrict<sbn::OpT0Finder>(sliceList, evt, fParams.OpT0Label() + slice_tag_suff);
@@ -2354,10 +3335,48 @@ namespace caf
 
         SRPFP pfp;
 
+<<<<<<< HEAD
         art::Ptr<anab::T0> thisPFPT0;
         if (f1PFPT0.isValid())
         {
           thisPFPT0 = f1PFPT0.at(iPart);
+=======
+        if (fmChi2PID.isValid()) {
+           FillTrackChi2PID(fmChi2PID.at(iPart), trk);
+        }
+        if (fmScatterClosestApproach.isValid() && fmScatterClosestApproach.at(iPart).size()==1) {
+           FillTrackScatterClosestApproach(fmScatterClosestApproach.at(iPart).front(), trk);
+        }
+        if (fmStoppingChi2Fit.isValid() && fmStoppingChi2Fit.at(iPart).size()==1) {
+           FillTrackStoppingChi2Fit(fmStoppingChi2Fit.at(iPart).front(), trk);
+        }
+        if (fmTrackDazzle.isValid() && fmTrackDazzle.at(iPart).size()==1) {
+           FillTrackDazzle(fmTrackDazzle.at(iPart).front(), trk);
+        }
+        if (fmCalo.isValid()) {
+          FillTrackCalo(fmCalo.at(iPart), fmTrackHit.at(iPart),
+              (fParams.FillHitsNeutrinoSlices() && NeutrinoSlice) || fParams.FillHitsAllSlices(),
+              fParams.TrackHitFillRRStartCut(), fParams.TrackHitFillRREndCut(),
+              dprop, trk);
+        }
+        
+        if (fmCRTHitMatch.isValid() && fDet == kICARUS) {
+          art::FindManyP<sbn::crt::CRTHit> CRTT02Hit = FindManyPStrict<sbn::crt::CRTHit>
+              (fmCRTHitMatch.at(iPart), evt, fParams.CRTHitMatchLabel());
+
+          std::vector<art::Ptr<sbn::crt::CRTHit>> crthitmatch;
+          std::vector<art::Ptr<sbn::crt::CRTHitT0TaggingInfo>> crthittagginginfo;
+          if(CRTT02Hit.isValid() && CRTT02Hit.size() == 1){
+            crthitmatch = CRTT02Hit.at(0);
+            crthittagginginfo = fmCRTHitMatchInfo.at(iPart);
+          }          
+          
+          FillTrackCRTHit(fmCRTHitMatch.at(iPart), crthitmatch, crthittagginginfo, fParams.CRTUseTS0(), CRT_T0_reference_time, CRT_T1_reference_time, trk);
+        }
+        // NOTE: SEE TODO AT fmCRTTrackMatch
+        if (fmCRTTrackMatch.isValid() && fDet == kICARUS) {
+          FillTrackCRTTrack(fmCRTTrackMatch.at(iPart), trk);
+>>>>>>> develop
         }
 
         const larpandoraobj::PFParticleMetadata *pfpMeta = (fmPFPMeta.at(iPart).empty()) ? NULL : fmPFPMeta.at(iPart).at(0).get();
