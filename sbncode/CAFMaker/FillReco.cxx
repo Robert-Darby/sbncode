@@ -261,6 +261,7 @@ namespace caf
     srmichel.michelg4id = tag.MichelG4ID;
     srmichel.muonmultiplicity = tag.MuonMult;
     srmichel.crt = tag.CRTPlane;
+    srmichel.crttime = tag.CRTTime;
   }
 
   std::vector<float> double_to_float_vector(const std::vector<double> &v)

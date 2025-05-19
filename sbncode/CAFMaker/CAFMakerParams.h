@@ -83,6 +83,11 @@ namespace caf
             Name("PandoraTagSuffixes"),
             Comment("List of suffixes to add to TPC reco tag names (e.g. cryo0 cryo1)")};
 
+        Atom<string> MichelHitLabel{
+            Name("MichelHitLabel"),
+            Comment("Base label of Michel recob::Hits."),
+            "pandora"};
+
         fhicl::OptionalSequence<std::string> MichelTagLabels{
             Name("MichelTagLabels"),
             Comment("List of labels for michel tagger modules")};

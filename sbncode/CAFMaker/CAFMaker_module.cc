@@ -1852,15 +1852,18 @@ namespace caf
     }
 
     // Get all the MichelTags
+    std::cout << michel_tags.size() << std::endl;
     std::map<std::string, std::vector<SRMichelTag>> srmichel_tags;
     for (const std::string &mtag : michel_tags)
     {
+      std::cout << mtag << std::endl;
       srmichel_tags[mtag] = std::vector<SRMichelTag>();
       art::Handle<std::vector<sbnd::MichelTag>> mtag_handle;
       GetByLabelStrict(evt, mtag, mtag_handle);
       if (mtag_handle.isValid())
       {
         const std::vector<sbnd::MichelTag> &mtags = *mtag_handle;
+        std::cout << mtags.size() << std::endl;
         for (unsigned i = 0; i < mtags.size(); i++)
         {
           srmichel_tags[mtag].emplace_back();
@@ -2205,9 +2208,17 @@ namespace caf
       // #######################################################
       FillSliceVars(*slice, primary, producer, recslc);
       FillSliceMetadata(primary_meta, recslc);
-      FillSliceFlashMatch(fmatch_map["fmatch"], recslc.fmatch);
-      FillSliceFlashMatch(fmatch_map["fmatchop"], recslc.fmatchop);
-      auto sr_flash = fmatch_map.find("fmatchara");
+      auto sr_flash = fmatch_map.find("fmatch");
+      if (sr_flash != fmatch_map.end())
+      {
+        FillSliceFlashMatch(fmatch_map["fmatch"], recslc.fmatch);
+      }
+      sr_flash = fmatch_map.find("fmatchop");
+      if (sr_flash != fmatch_map.end())
+      {
+        FillSliceFlashMatch(fmatch_map["fmatchop"], recslc.fmatchop);
+      }
+      sr_flash = fmatch_map.find("fmatchara");
       if (sr_flash != fmatch_map.end())
       {
         FillSliceFlashMatch(fmatch_map["fmatchara"], recslc.fmatchara);
